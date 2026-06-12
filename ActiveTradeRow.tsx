@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { TrendingUp, TrendingDown, X, Clock, Target, ShieldOff } from "lucide-react";
 import { useTradingStore, type ActiveTrade } from "@/hooks/useTradingState";
 import { TokenIcon } from "@/components/header/TokenIcons";
-import { formatPrice, formatUsdt, formatDuration, cn } from "@/lib/utils";
+import { formatPrice, formatUsdt, formatDuration } from "@/lib/utils";
 
 interface Props { trade: ActiveTrade; index: number; }
 
@@ -28,10 +28,13 @@ export default function ActiveTradeRow({ trade, index }: Props) {
     ? "rgba(0,255,136,0.3)"
     : "rgba(255,51,102,0.3)";
 
-  // Progress toward TP/SL
-  const totalMove  = Math.abs(trade.tpPct + trade.slPct);
+  // ─── FIX: DYNAMICALLY CALCULATE TP/SL PERCENTAGES FROM ABSOLUTE PRICES ───
+  const tradeTpPct = Math.abs(((trade.tp - trade.entryPrice) / trade.entryPrice) * 100);
+  const tradeSlPct = Math.abs(((trade.sl - trade.entryPrice) / trade.entryPrice) * 100);
+
+  const totalMove  = Math.abs(tradeTpPct + tradeSlPct);
   const currentPct = Math.abs(trade.pnlPct);
-  const progress   = totalMove > 0 ? Math.min(100, (currentPct / (isProfit ? trade.tpPct : trade.slPct)) * 100) : 0;
+  const progress   = totalMove > 0 ? Math.min(100, (currentPct / (isProfit ? tradeTpPct : tradeSlPct)) * 100) : 0;
 
   const handleClose = () => {
     setClosing(true);
@@ -62,11 +65,11 @@ export default function ActiveTradeRow({ trade, index }: Props) {
 
         <div className="flex flex-col gap-0.5 leading-none">
           <div className="flex items-center gap-1.5">
-            <span className="font-display text-[11px] font-700 text-[#E8F4F8] tracking-wider">
-              {trade.symbol.replace("/", "/")}
+            <span className="font-display text-[11px] font-[700] text-[#E8F4F8] tracking-wider">
+              {trade.symbol}
             </span>
             <span
-              className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-[2px] font-display text-[8px] font-700 tracking-wider"
+              className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-[2px] font-display text-[8px] font-[700] tracking-wider"
               style={{
                 color:      dirColor,
                 background: `${dirColor}15`,
@@ -94,7 +97,7 @@ export default function ActiveTradeRow({ trade, index }: Props) {
             key={trade.pnlUsdt.toFixed(1)}
             initial={{ y: -3, opacity: 0.6 }}
             animate={{ y: 0,  opacity: 1   }}
-            className="font-display text-[13px] font-800 tabular-nums"
+            className="font-display text-[13px] font-[800] tabular-nums"
             style={{ color: pnlColor, textShadow: `0 0 10px ${pnlGlow}` }}
           >
             {isProfit ? "+" : ""}${formatUsdt(Math.abs(trade.pnlUsdt))}
@@ -169,7 +172,7 @@ export default function ActiveTradeRow({ trade, index }: Props) {
           Margin: <span className="text-[#7A9BB5]">${formatUsdt(trade.allocatedUsdt)}</span>
         </span>
         <span className="font-mono text-[8px] text-[#3D5A6E]">
-          Live: <span className="font-600" style={{ color: "#00F5FF" }}>
+          Live: <span className="font-[600]" style={{ color: "#00F5FF" }}>
             {formatPrice(trade.currentPrice, trade.symbol)}
           </span>
         </span>
