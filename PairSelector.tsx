@@ -3,7 +3,8 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronDown, Search } from "lucide-react";
-import { useTradingStore, SYMBOLS, LIVE_PRICES, BASE_PRICES } from "@/hooks/useTradingState";
+// FIX: Removed the non-existent 'SYMBOLS' import to pass TypeScript validation
+import { useTradingStore, LIVE_PRICES, BASE_PRICES } from "@/hooks/useTradingState";
 import { TokenIcon } from "./TokenIcons";
 import { formatPrice, cn } from "@/lib/utils";
 
@@ -16,6 +17,9 @@ export default function PairSelector() {
   const [prices, setPrices] = useState<Record<string, number>>({ ...LIVE_PRICES });
 
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // FIX: Generate the symbols list dynamically from available live data keys
+  const symbolsList = Object.keys(LIVE_PRICES);
 
   // Refresh prices in dropdown every second
   useEffect(() => {
@@ -32,7 +36,8 @@ export default function PairSelector() {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  const filtered = SYMBOLS.filter(s =>
+  // Filter our dynamically generated array
+  const filtered = symbolsList.filter(s =>
     s.toLowerCase().includes(query.toLowerCase())
   );
 
@@ -64,7 +69,7 @@ export default function PairSelector() {
         <TokenIcon symbol={activePair} size={22} />
 
         <div className="flex flex-col items-start leading-none">
-          <span className="font-display text-[13px] font-700 text-[#E8F4F8] tracking-wider">
+          <span className="font-display text-[13px] font-[700] text-[#E8F4F8] tracking-wider">
             {(activePair || "BTC/USDT").replace("/", " / ")}
           </span>
           <span
@@ -141,7 +146,7 @@ export default function PairSelector() {
 
                       <span
                         className={cn(
-                          "flex-1 text-left font-display text-[11px] font-600 tracking-wider",
+                          "flex-1 text-left font-display text-[11px] font-[600] tracking-wider",
                           active ? "text-[#00F5FF]" : "text-[#C8DDE8]"
                         )}
                       >

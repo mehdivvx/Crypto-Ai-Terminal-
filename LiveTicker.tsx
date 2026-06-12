@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { SYMBOLS, LIVE_PRICES, BASE_PRICES } from "@/hooks/useTradingState";
+// FIX: Removed the non-existent 'SYMBOLS' import to pass TypeScript verification
+import { LIVE_PRICES, BASE_PRICES } from "@/hooks/useTradingState";
 import { formatPrice } from "@/lib/utils";
 import { TrendingUp, TrendingDown } from "lucide-react";
 
@@ -11,21 +12,26 @@ interface TickerItem {
   change: number; // % from base
 }
 
-function buildItems(): TickerItem[] {
-  return SYMBOLS.map(sym => {
-    const live   = LIVE_PRICES[sym]  ?? BASE_PRICES[sym] ?? 0;
-    const base   = BASE_PRICES[sym]  ?? live;
-    const change = ((live - base) / base) * 100;
+// FIX: Passed live state parameters directly into the builder loop to derive the index matrix on the fly
+function buildItems(livePrices: Record<string, number>, basePrices: Record<string, number>): TickerItem[] {
+  const symbols = Object.keys(livePrices);
+  return symbols.map(sym => {
+    const live   = livePrices[sym]  ?? basePrices[sym] ?? 0;
+    const base   = basePrices[sym]  ?? live;
+    const change = base > 0 ? ((live - base) / base) * 100 : 0;
     return { symbol: sym, price: live, change };
   });
 }
 
 export default function LiveTicker() {
-  const [items, setItems] = useState<TickerItem[]>(buildItems);
+  // Pass current store references to initial state calculation
+  const [items, setItems] = useState<TickerItem[]>(() => buildItems(LIVE_PRICES, BASE_PRICES));
 
-  // Refresh ticker display every 800ms (less than tick to smooth rendering)
+  // Refresh ticker display every 800ms
   useEffect(() => {
-    const id = setInterval(() => setItems(buildItems()), 800);
+    const id = setInterval(() => {
+      setItems(buildItems(LIVE_PRICES, BASE_PRICES));
+    }, 800);
     return () => clearInterval(id);
   }, []);
 
