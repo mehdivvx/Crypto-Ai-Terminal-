@@ -1,26 +1,56 @@
 "use client";
 
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState, useMemo } from "react";
 import { useTradingStore } from "./useTradingState";
-import { TrendingUp, TrendingDown, Zap, Gauge, Activity } from "lucide-react";
+import { TrendingUp, TrendingDown, Zap, Gauge, Activity, Layers, Sliders, BarChart3, Target, Clock } from "lucide-react";
+
+// Master list of all tracked market pairs
+const TARGET_PAIRS = [
+  "BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT",
+  "ADA/USDT", "DOGE/USDT", "AVAX/USDT", "LINK/USDT",
+  "ENA/USDT", "TAO/USDT", "ZEC/USDT", "SUI/USDT", "XAUT/USDT"
+];
+
+// Helper: Cubic Bezier Path Generator for Smooth Graphs
+function generateSmoothPath(points: number[][]) {
+  if (points.length === 0) return "";
+  if (points.length === 1) return `M ${points[0][0]},${points[0][1]}`;
+  let d = `M ${points[0][0]},${points[0][1]}`;
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[Math.max(0, i - 1)];
+    const p1 = points[i];
+    const p2 = points[i + 1];
+    const p3 = points[Math.min(points.length - 1, i + 2)];
+
+    const cp1x = p1[0] + (p2[0] - p0[0]) / 6;
+    const cp1y = p1[1] + (p2[1] - p0[1]) / 6;
+    const cp2x = p2[0] - (p3[0] - p1[0]) / 6;
+    const cp2y = p2[1] - (p3[1] - p1[1]) / 6;
+
+    d += ` C ${cp1x},${cp1y} ${cp2x},${cp2y} ${p2[0]},${p2[1]}`;
+  }
+  return d;
+}
 
 export default function TechnicalAnalysisPanel() {
   const candles = useTradingStore((s) => s.candles) || [];
   const fundingRate = useTradingStore((s) => s.fundingRate) || 0.0015;
   const coinMetrics = useTradingStore((s) => s.coinMetrics) || {};
+  const activePair = useTradingStore((s) => s.activePair) || "BTC/USDT";
+  const timeframe = useTradingStore((s) => s.timeframe) || "15m";
+
+  const [activeTab, setActiveTab] = useState<"t1" | "t2">("t1");
 
   const C_GREEN = "#00ff9d";
   const C_PINK = "#ff2a6d";
   const C_CYAN = "#00d4ff";
-  
-  // TradingView standard colors for MACD lines
   const MACD_BLUE = "#2962FF";
   const SIGNAL_ORANGE = "#FF6D00";
 
-  // Auto-scroll ref for the MACD chart
   const scrollRef = useRef<HTMLDivElement>(null);
+  const volGraphScrollRef = useRef<HTMLDivElement>(null);
 
-  // ─── 1. TRUE MACD CALCULATION (Lines + Histogram) ───
+  // ─── 1. TRUE MACD CALCULATION ───
   let macdHist: number[] = [];
   let renderMacd: number[] = [];
   let renderSignal: number[] = [];
@@ -44,251 +74,494 @@ export default function TechnicalAnalysisPanel() {
     const signalLine = calcEMA(macdLine, 9);
     const histLine = macdLine.map((v, i) => v - signalLine[i]);
 
-    // Slice 150 periods so the user has plenty of scrollable history
     const limit = Math.min(150, histLine.length);
     renderMacd = macdLine.slice(-limit);
     renderSignal = signalLine.slice(-limit);
     macdHist = histLine.slice(-limit);
   }
 
-  // Auto-scroll to the right-most edge (latest data) whenever a new candle forms
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollLeft = scrollRef.current.scrollWidth;
-    }
-  }, [candles.length]);
+    if (activeTab === "t1" && scrollRef.current) scrollRef.current.scrollLeft = scrollRef.current.scrollWidth;
+    if (activeTab === "t2" && volGraphScrollRef.current) volGraphScrollRef.current.scrollLeft = volGraphScrollRef.current.scrollWidth;
+  }, [candles.length, activeTab]);
 
-  // Extract latest values for the header like TradingView does
   const lastMacd = renderMacd[renderMacd.length - 1] || 0;
   const lastSignal = renderSignal[renderSignal.length - 1] || 0;
   const lastHist = macdHist[macdHist.length - 1] || 0;
+  const maxAbs = Math.max(...renderMacd.map(Math.abs), ...renderSignal.map(Math.abs), ...macdHist.map(Math.abs), 0.0001);
 
-  // Calculate dynamic scaling bounds
-  const maxAbs = Math.max(
-    ...renderMacd.map(Math.abs),
-    ...renderSignal.map(Math.abs),
-    ...macdHist.map(Math.abs),
-    0.0001 // prevent division by zero
-  );
+  // ─── 2. RSI SCANNERS & GAUGE (FIXED: EXPLICIT 14 PAIR MAPPING) ───
+  const { bullishCoins, bearishCoins } = useMemo(() => {
+    // Map exactly the 14 Target Pairs, fallback to 50 if the store hasn't initialized it yet
+    const metricsArr = TARGET_PAIRS.map(sym => ({
+      sym,
+      rsi: coinMetrics[sym]?.rsi ?? 50 
+    }));
 
-  // ─── 2. TOP RSI SCANNERS ───
-  const metricsArr = Object.entries(coinMetrics).map(([sym, data]) => ({ sym, ...data }));
-  const bullishCoins = [...metricsArr].sort((a, b) => b.rsi - a.rsi).slice(0, 3);
-  const bearishCoins = [...metricsArr].sort((a, b) => a.rsi - b.rsi).slice(0, 3);
+    // Sort by RSI highest to lowest
+    const sortedMetrics = [...metricsArr].sort((a, b) => b.rsi - a.rsi);
+    
+    // Explicitly grab the top 3 and absolute bottom 3 to guarantee zero overlap
+    const top = sortedMetrics.slice(0, 3);
+    const bottom = sortedMetrics.slice(-3).reverse(); 
+    
+    return { bullishCoins: top, bearishCoins: bottom };
+  }, [coinMetrics]);
 
-  // ─── 3. FUNDING DIAL RADIAL MAPPED VALUES ───
   const clampedFunding = Math.max(-0.1, Math.min(0.1, fundingRate));
   const needleRotation = (clampedFunding / 0.1) * 90;
   const isBullishFunding = fundingRate >= 0;
 
-  // ─── SVG CHART CONFIGURATION ───
-  const step = 10; // 10px width per data point cell
-  const rightPadding = 120; // Extra blank space to the right (allows dragging past the current candle)
-  const dataWidth = macdHist.length * step;
-  const totalChartWidth = Math.max(800, dataWidth + rightPadding);
+  const step = 10;
+  const totalChartWidth = Math.max(800, (macdHist.length * step) + 120);
+
+  // ─── 3. TECHNICAL 2: PREDICTIVE ENGINE CORE ───
+  const evaluatePrediction = (history: typeof candles, activeRsi: number) => {
+    if (history.length < 10) return { bias: "GREEN", prob: 50, reasons: [] };
+    const last = history[history.length - 1];
+    let score = 50; 
+    let criteria: string[] = [];
+
+    const isCandleGreen = last.c >= last.o;
+    const avgBodySize = history.slice(-10).reduce((acc, curr) => acc + Math.abs(curr.c - curr.o), 0) / 10;
+    
+    if (isCandleGreen) {
+      score += (Math.abs(last.c - last.o) > avgBodySize) ? 14 : 7;
+      criteria.push("Ask-side liquidity absorption forming structural baseline.");
+    } else {
+      score -= (Math.abs(last.c - last.o) > avgBodySize) ? 14 : 7;
+      criteria.push("Supply compression forcing distribution beneath anchors.");
+    }
+
+    if (macdHist.length > 2) {
+      if (macdHist[macdHist.length - 1] > macdHist[macdHist.length - 2]) {
+        score += 16;
+        criteria.push("MACD acceleration signals expanding positive vector.");
+      } else {
+        score -= 16;
+        criteria.push("MACD decay signals systemic delta depletion.");
+      }
+    }
+
+    const currentVol = last.v || 100;
+    const avgVol = history.slice(-10).reduce((acc, curr) => acc + (curr.v || 0), 0) / 10;
+    if (currentVol > avgVol) {
+      if (isCandleGreen) {
+        score += 12;
+        criteria.push("High-volume delta confirmation validating buyer conviction.");
+      } else {
+        score -= 12;
+        criteria.push("High-volume distribution confirming active liquidations.");
+      }
+    }
+
+    if (activeRsi > 68) {
+      score -= 10;
+      criteria.push("RSI oscillator extension signals local top exhaustion.");
+    } else if (activeRsi < 32) {
+      score += 10;
+      criteria.push("RSI mapping notes deeply exhausted seller pools.");
+    } else {
+      score += isCandleGreen ? 4 : -4;
+    }
+
+    const finalProb = Math.min(Math.max(score, 5), 95);
+    return {
+      bias: finalProb >= 50 ? "GREEN" : "RED",
+      prob: finalProb >= 50 ? finalProb : 100 - finalProb,
+      reasons: criteria.slice(0, 2)
+    };
+  };
+
+  // ─── BULLETPROOF STATE MEMORY FOR PREDICTIONS ───
+  const liveAccuracyRef = useRef<boolean[]>([]);
+  const lockedPredRef = useRef<{bias: string, prob: number} | null>(null);
+  
+  const trackingContextRef = useRef<{pair: string, tf: string, sig: string | null}>({
+    pair: activePair,
+    tf: timeframe,
+    sig: null
+  });
+  const [renderTick, setRenderTick] = useState(0);
+
+  useEffect(() => {
+    if (candles.length < 2) return;
+
+    const currentCandle = candles[candles.length - 1];
+    const previousCandle = candles[candles.length - 2];
+    const candleSig = `${candles.length}-${currentCandle.o}`;
+    
+    const ctx = trackingContextRef.current;
+
+    // 1. HARD RESET
+    if (ctx.pair !== activePair || ctx.tf !== timeframe) {
+      liveAccuracyRef.current = [];
+      lockedPredRef.current = null;
+      trackingContextRef.current = { pair: activePair, tf: timeframe, sig: candleSig };
+      setRenderTick(t => t + 1);
+      return; 
+    }
+
+    // 2. INITIAL LOAD
+    if (ctx.sig === null) {
+      trackingContextRef.current.sig = candleSig;
+      return; 
+    }
+
+    // 3. TRUE CANDLE ROLLOVER
+    if (ctx.sig !== candleSig) {
+      if (lockedPredRef.current) {
+        const actualBias = previousCandle.c >= previousCandle.o ? "GREEN" : "RED";
+        const isCorrect = lockedPredRef.current.bias === actualBias;
+        liveAccuracyRef.current = [...liveAccuracyRef.current, isCorrect].slice(-10);
+      }
+
+      const liveRsi = coinMetrics[activePair]?.rsi || 50;
+      const newLockedPred = evaluatePrediction(candles.slice(0, -1), liveRsi);
+      lockedPredRef.current = newLockedPred;
+
+      trackingContextRef.current.sig = candleSig;
+      setRenderTick(t => t + 1);
+    }
+  }, [candles, activePair, timeframe, coinMetrics]); 
+
+  const nextCandlePred = useMemo(() => {
+    const liveRsi = coinMetrics[activePair]?.rsi || 50;
+    return evaluatePrediction(candles, liveRsi);
+  }, [candles, coinMetrics, activePair]);
+
+  const correctCount = liveAccuracyRef.current.filter(Boolean).length;
+  const totalCount = liveAccuracyRef.current.length;
+  const lockedPrediction = lockedPredRef.current;
+
+  // ─── 4. ACTIVE LIQUID GLASS VOLUME CALCULATIONS ───
+  const { buyRatio, sellRatio, buyUsd, sellUsd, buyVolumeHistory, sellVolumeHistory, maxVolVal } = useMemo(() => {
+    if (candles.length === 0) return { buyRatio: 0.5, sellRatio: 0.5, buyUsd: 0, sellUsd: 0, buyVolumeHistory: [], sellVolumeHistory: [], maxVolVal: 1 };
+    
+    const last = candles[candles.length - 1];
+    const totalV = last.v || 1;
+    const denominator = (last.h - last.l) || 1;
+    
+    let buyV = totalV * ((last.c - last.l) / denominator);
+    let sellV = totalV * ((last.h - last.c) / denominator);
+    if (last.c === last.o) { buyV = totalV * 0.5; sellV = totalV * 0.5; }
+
+    const totalCalculated = buyV + sellV;
+    const bRatio = buyV / totalCalculated;
+    const sRatio = sellV / totalCalculated;
+
+    const subset = candles.slice(-50);
+    const buyHist = subset.map(c => c.c >= c.o ? (c.v * ((c.c - c.l) / ((c.h - c.l)||1))) : (c.v * 0.4));
+    const sellHist = subset.map(c => c.c < c.o ? (c.v * ((c.h - c.c) / ((c.h - c.l)||1))) : (c.v * 0.4));
+
+    return {
+      buyRatio: bRatio, sellRatio: sRatio,
+      buyUsd: buyV * last.c, sellUsd: sellV * last.c,
+      buyVolumeHistory: buyHist, sellVolumeHistory: sellHist,
+      maxVolVal: Math.max(...buyHist, ...sellHist, 1)
+    };
+  }, [candles]);
+
+  const compactUsd = (num: number) => Intl.NumberFormat('en-US', { notation: "compact", maximumFractionDigits: 1 }).format(num);
+
+  // ─── 5. DOMINANCE ILLUMINATION ENGINE ───
+  const isBuyDom = buyRatio >= 0.9;
+  const isSellDom = sellRatio >= 0.9;
+  
+  const containerGlowStyle = {
+    boxShadow: isBuyDom ? `0 0 50px ${C_GREEN}40, inset 0 0 80px ${C_GREEN}30` :
+               isSellDom ? `0 0 50px ${C_PINK}40, inset 0 0 80px ${C_PINK}30` :
+               `-15px 0 30px ${C_GREEN}15, 15px 0 30px ${C_PINK}15, inset 0 0 20px rgba(0,0,0,0.8)`,
+    borderColor: isBuyDom ? `${C_GREEN}90` : isSellDom ? `${C_PINK}90` : 'rgba(255,255,255,0.05)',
+    transition: 'all 0.8s ease'
+  };
+
+  const volStep = 15;
+  const volDataWidth = Math.max(0, buyVolumeHistory.length - 1) * volStep;
+  const volSvgWidth = Math.max(600, volDataWidth + 250);
 
   return (
     <div className="w-full h-full flex flex-col gap-3 overflow-hidden select-none p-0.5">
       
-      {/* ── TOP SECTION: FULL WIDTH SCROLLABLE MACD ── */}
-      <div className="flex-[1.4] min-h-0 bg-[#040608] rounded-[16px] border border-white/5 shadow-[inset_0_0_25px_rgba(0,0,0,0.9)] flex flex-col relative overflow-hidden">
-        
-        {/* Background Ambient Glow */}
-        <div className="absolute top-[-50px] left-[-50px] w-[200px] h-[200px] bg-[#2962FF] opacity-[0.06] blur-[80px] pointer-events-none rounded-full" />
-        
-        {/* Header with Dynamic TV-Style Legend */}
-        <div className="flex items-center gap-3 p-3 shrink-0 relative z-10 border-b border-white/5 bg-black/20">
-          <div className="flex items-center gap-2">
-            <Activity size={15} className="text-[#ff2a6d]" style={{ filter: `drop-shadow(0 0 6px ${C_PINK})` }} />
-            <span className="font-display text-[12px] font-bold tracking-[2px] uppercase text-white">MACD Histogram</span>
-          </div>
-          <span className="font-mono text-[10px] text-[#4f5b70] tracking-[1px] ml-1">12 26 9</span>
-          <div className="flex items-center gap-2 font-mono text-[11px] font-bold ml-2">
-            <span style={{ color: lastHist > 0 ? C_CYAN : C_PINK }}>{lastHist.toFixed(2)}</span>
-            <span style={{ color: MACD_BLUE }}>{lastMacd.toFixed(2)}</span>
-            <span style={{ color: SIGNAL_ORANGE }}>{lastSignal.toFixed(2)}</span>
-          </div>
-        </div>
-
-        {/* Custom SVG MACD Render Engine (Scrollable) */}
-        <div 
-          ref={scrollRef}
-          className="flex-1 w-full overflow-x-auto overflow-y-hidden custom-scrollbar relative px-1 pb-1 scroll-smooth"
+      {/* ── HIGH TECH NAVIGATION TABS ── */}
+      <div className="flex shrink-0 p-1 bg-[#040608]/90 border border-white/5 rounded-[8px] gap-1 relative z-20">
+        <button
+          onClick={() => setActiveTab("t1")}
+          className={`flex-1 flex items-center justify-center gap-1.5 py-1 rounded-[6px] font-mono text-[8.5px] font-black tracking-[1.5px] uppercase transition-all duration-300 ${
+            activeTab === "t1" 
+              ? "bg-gradient-to-b from-white/10 to-white/[0.02] border border-white/10 text-white shadow-[0_4px_12px_rgba(0,0,0,0.5)]" 
+              : "text-[#4f5b70] hover:text-slate-300 hover:bg-white/[0.02]"
+          }`}
         >
-          {macdHist.length === 0 ? (
-            <div className="absolute inset-0 flex items-center justify-center font-mono text-[10px] text-[#4f5b70] tracking-[1px]">
-              CALCULATING MACD MATRICES...
-            </div>
-          ) : (
-            <div style={{ width: `${totalChartWidth}px`, height: "100%", position: "relative" }}>
-              <svg 
-                width="100%" 
-                height="100%" 
-                viewBox={`0 0 ${totalChartWidth} 100`} 
-                preserveAspectRatio="none" 
-                className="overflow-visible block"
-              >
-                {/* Zero Line extending into the padding */}
-                <line x1="0" y1="50" x2={totalChartWidth} y2="50" stroke="#ffffff" strokeOpacity="0.15" strokeDasharray="2 2" strokeWidth="0.5" />
-                
-                {/* Histogram Bars */}
-                {macdHist.map((val, i) => {
-                  const isPos = val > 0;
-                  const isGrowing = i === 0 ? true : (isPos ? val > macdHist[i - 1] : val < macdHist[i - 1]);
-                  
-                  // Map value to 0-45 scale to fit within 0-100 viewBox (leaves 5% padding)
-                  const height = (Math.abs(val) / maxAbs) * 45; 
-                  const y = isPos ? 50 - height : 50;
-                  const x = i * step + 3; // +3 to center the thinner bars inside the step cell
-
-                  let barColor = isPos
-                    ? isGrowing ? C_CYAN : `${C_CYAN}60`
-                    : isGrowing ? C_PINK : `${C_PINK}60`;
-
-                  return (
-                    <rect 
-                      key={`hist-${i}`} 
-                      x={x} 
-                      y={y} 
-                      width={step - 6} // Made bars noticeably thinner (4px width in a 10px step)
-                      height={Math.max(0.5, height)} 
-                      fill={barColor} 
-                      rx="1" 
-                    />
-                  );
-                })}
-
-                {/* MACD Line (Blue) */}
-                <polyline
-                  points={renderMacd.map((val, i) => {
-                    const x = i * step + (step / 2);
-                    const y = 50 - (val / maxAbs) * 45;
-                    return `${x},${y}`;
-                  }).join(" ")}
-                  fill="none"
-                  stroke={MACD_BLUE}
-                  strokeWidth="1.2"
-                  strokeLinejoin="round"
-                />
-
-                {/* Signal Line (Orange) */}
-                <polyline
-                  points={renderSignal.map((val, i) => {
-                    const x = i * step + (step / 2);
-                    const y = 50 - (val / maxAbs) * 45;
-                    return `${x},${y}`;
-                  }).join(" ")}
-                  fill="none"
-                  stroke={SIGNAL_ORANGE}
-                  strokeWidth="1.2"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </div>
-          )}
-        </div>
+          <Sliders size={11} className={activeTab === "t1" ? "text-[#00d4ff]" : ""} /> Technical Multipliers
+        </button>
+        <button
+          onClick={() => setActiveTab("t2")}
+          className={`flex-1 flex items-center justify-center gap-1.5 py-1 rounded-[6px] font-mono text-[8.5px] font-black tracking-[1.5px] uppercase transition-all duration-300 ${
+            activeTab === "t2" 
+              ? "bg-gradient-to-b from-white/10 to-white/[0.02] border border-white/10 text-white shadow-[0_4px_12px_rgba(0,0,0,0.5)]" 
+              : "text-[#4f5b70] hover:text-slate-300 hover:bg-white/[0.02]"
+          }`}
+        >
+          <Zap size={11} className={activeTab === "t2" ? "text-[#00ff9d]" : ""} /> Predictive Vectors
+        </button>
       </div>
 
-      {/* ── BOTTOM SECTION: RSI SCANNERS & UPGRADED FUNDING DIAL ── */}
-      <div className="flex-[1] min-h-0 flex flex-row gap-3 overflow-hidden">
-        
-        {/* LEFT COMPONENT: MARKET STRENGTH (RSI) */}
-        <div className="flex-1 bg-[#040608] rounded-[16px] border border-white/5 p-4 flex flex-col relative shadow-[inset_0_0_20px_rgba(0,0,0,0.8)] overflow-hidden">
-          <span className="font-display text-[10px] font-bold text-[#8b99ae] tracking-[2px] uppercase mb-3 flex items-center gap-1.5 shrink-0 z-10">
-            <Zap size={12} className="text-[#00d4ff]" /> Market Strength (RSI)
-          </span>
-          <div className="flex-1 flex flex-col justify-between z-10 min-h-0">
-            {bullishCoins.map((c) => (
-              <div key={c.sym} className="flex items-center justify-between px-3 py-1.5 rounded-[6px] bg-gradient-to-r from-[#00d4ff]/10 to-transparent border border-[#00d4ff]/15">
-                <div className="flex items-center gap-2">
-                  <TrendingUp size={12} className="text-[#00d4ff]" />
-                  <span className="font-mono text-[10px] font-bold text-white">{c.sym.replace("/USDT", "")}</span>
-                </div>
-                <span className="font-num text-[12px] font-bold text-[#00d4ff]" style={{ textShadow: `0 0 8px ${C_CYAN}` }}>
-                  {c.rsi.toFixed(1)}
-                </span>
-              </div>
-            ))}
-            <div className="h-[2px] w-full bg-white/5 my-1.5 shrink-0 rounded-full" />
-            {bearishCoins.map((c) => (
-              <div key={c.sym} className="flex items-center justify-between px-3 py-1.5 rounded-[6px] bg-gradient-to-r from-[#ff2a6d]/10 to-transparent border border-[#ff2a6d]/15">
-                <div className="flex items-center gap-2">
-                  <TrendingDown size={12} className="text-[#ff2a6d]" />
-                  <span className="font-mono text-[10px] font-bold text-white">{c.sym.replace("/USDT", "")}</span>
-                </div>
-                <span className="font-num text-[12px] font-bold text-[#ff2a6d]" style={{ textShadow: `0 0 8px ${C_PINK}` }}>
-                  {c.rsi.toFixed(1)}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* RIGHT COMPONENT: EXPANDED HIGH-VIS FUNDING RATE GAUGE */}
-        <div className="flex-[1.2] bg-[#040608] rounded-[16px] border border-white/5 p-4 flex flex-col items-center justify-between relative shadow-[inset_0_0_20px_rgba(0,0,0,0.8)] overflow-hidden">
-          <div className={`absolute -bottom-8 w-32 h-32 blur-[40px] rounded-full pointer-events-none ${isBullishFunding ? 'bg-[#00ff9d]/10' : 'bg-[#ff2a6d]/10'}`} />
-          
-          <div className="w-full flex justify-between items-center shrink-0 mb-2">
-            <span className="font-display text-[10px] font-bold text-[#8b99ae] tracking-[2px] uppercase flex items-center gap-1.5">
-              <Gauge size={13} className={isBullishFunding ? "text-[#00ff9d]" : "text-[#ff2a6d]"} /> 
-              Funding Rate
-            </span>
-            <span className="font-num text-[14px] font-black tracking-wide text-white bg-black/40 px-2.5 py-0.5 rounded-[4px] border border-white/5" style={{ textShadow: `0 0 15px ${isBullishFunding ? C_GREEN : C_PINK}` }}>
-              {isBullishFunding ? "+" : ""}{fundingRate.toFixed(4)}%
-            </span>
-          </div>
-
-          {/* Neon SVG Semi-Circular Meter with Upgraded Needle Arrow */}
-          <div className="relative w-full max-w-[200px] aspect-[2/1] flex items-end justify-center mt-auto mb-3">
-            <svg className="w-full h-full absolute bottom-0 left-0 overflow-visible" viewBox="0 0 100 50" preserveAspectRatio="xMidYMax meet">
-              <defs>
-                <linearGradient id="neonGlow" x1="0%" y1="0%" x2="100%" y2="0%">
-                  <stop offset="0%" stopColor={C_PINK} />
-                  <stop offset="50%" stopColor="#b026ff" />
-                  <stop offset="100%" stopColor={C_GREEN} />
-                </linearGradient>
-                <filter id="lightningArc">
-                  <feGaussianBlur stdDeviation="1.5" result="coloredBlur"/>
-                  <feMerge>
-                    <feMergeNode in="coloredBlur"/>
-                    <feMergeNode in="SourceGraphic"/>
-                  </feMerge>
-                </filter>
-              </defs>
-              {/* Thick Background Arc track */}
-              <path d="M 10 45 A 40 40 0 0 1 90 45" fill="none" stroke="#11161d" strokeWidth="8" strokeLinecap="round" />
-              {/* Active Neon Lightning Track */}
-              <path d="M 10 45 A 40 40 0 0 1 90 45" fill="none" stroke="url(#neonGlow)" strokeWidth="4" strokeLinecap="round" filter="url(#lightningArc)" opacity="0.95" />
-              
-              {/* Zero Marker Tick */}
-              <line x1="50" y1="5" x2="50" y2="12" stroke="#ffffff" strokeOpacity="0.4" strokeWidth="2" strokeLinecap="round" />
-            </svg>
+      {/* ── TAB CONTENT DISPLAY AREA ── */}
+      <div className="flex-1 min-h-0 w-full relative">
+        {activeTab === "t1" ? (
+          /* VERTICALLY SCROLLABLE T1 WRAPPER */
+          <div className="w-full h-full flex flex-col gap-3 absolute inset-0 overflow-y-auto custom-scrollbar pr-1 pb-2">
             
-            {/* Highly Visible Arrow-tipped Needle */}
-            <div 
-              className="absolute bottom-[2px] w-4 h-[95%] origin-bottom transition-transform duration-700 ease-out z-10 flex flex-col items-center"
-              style={{ transform: `rotate(${needleRotation}deg)` }}
-            >
-              {/* Prominent White Arrow Head Tip */}
-              <div className="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-b-[10px] border-b-white" style={{ filter: `drop-shadow(0 0 6px ${isBullishFunding ? C_GREEN : C_PINK})` }} />
-              {/* Thick Glowing Needle Body */}
-              <div 
-                className="w-[3px] flex-1 bg-white"
-                style={{ boxShadow: `0 0 10px ${isBullishFunding ? C_GREEN : C_PINK}` }}
-              />
-              {/* Center Pivot Anchor */}
-              <div className="w-3 h-3 bg-white rounded-full absolute -bottom-1.5" style={{ boxShadow: `0 0 10px ${isBullishFunding ? C_GREEN : C_PINK}` }} />
+            {/* MACD HISTOGRAM ENGINE (Locked Height) */}
+            <div className="h-[320px] min-h-[320px] shrink-0 bg-[#040608] rounded-[16px] border border-white/5 shadow-[inset_0_0_25px_rgba(0,0,0,0.9)] flex flex-col relative overflow-hidden">
+              <div className="absolute top-[-50px] left-[-50px] w-[200px] h-[200px] bg-[#2962FF] opacity-[0.06] blur-[80px] pointer-events-none rounded-full" />
+              <div className="flex items-center gap-3 p-3 shrink-0 relative z-10 border-b border-white/5 bg-black/20">
+                <div className="flex items-center gap-2">
+                  <Activity size={15} className="text-[#ff2a6d]" style={{ filter: `drop-shadow(0 0 6px ${C_PINK})` }} />
+                  <span className="font-display text-[12px] font-bold tracking-[2px] uppercase text-white">MACD Histogram</span>
+                </div>
+                <span className="font-mono text-[10px] text-[#4f5b70] tracking-[1px] ml-1">12 26 9</span>
+                <div className="flex items-center gap-2 font-mono text-[11px] font-bold ml-2">
+                  <span style={{ color: lastHist > 0 ? C_CYAN : C_PINK }}>{lastHist.toFixed(2)}</span>
+                  <span style={{ color: MACD_BLUE }}>{lastMacd.toFixed(2)}</span>
+                  <span style={{ color: SIGNAL_ORANGE }}>{lastSignal.toFixed(2)}</span>
+                </div>
+              </div>
+
+              <div ref={scrollRef} className="flex-1 w-full overflow-x-auto overflow-y-hidden custom-scrollbar relative px-1 pb-1 scroll-smooth">
+                {macdHist.length === 0 ? (
+                  <div className="absolute inset-0 flex items-center justify-center font-mono text-[10px] text-[#4f5b70] tracking-[1px]">CALCULATING MATRICES...</div>
+                ) : (
+                  <div style={{ width: `${totalChartWidth}px`, height: "100%", position: "relative" }}>
+                    <svg width="100%" height="100%" viewBox={`0 0 ${totalChartWidth} 100`} preserveAspectRatio="none" className="overflow-visible block">
+                      <line x1="0" y1="50" x2={totalChartWidth} y2="50" stroke="#ffffff" strokeOpacity="0.15" strokeDasharray="2 2" strokeWidth="0.5" />
+                      {macdHist.map((val, i) => {
+                        const isPos = val > 0;
+                        const isGrowing = i === 0 ? true : (isPos ? val > macdHist[i - 1] : val < macdHist[i - 1]);
+                        const height = (Math.abs(val) / maxAbs) * 45; 
+                        const y = isPos ? 50 - height : 50;
+                        const x = i * step + 3;
+                        let barColor = isPos ? (isGrowing ? C_CYAN : `${C_CYAN}60`) : (isGrowing ? C_PINK : `${C_PINK}60`);
+                        return <rect key={`hist-${i}`} x={x} y={y} width={step - 6} height={Math.max(0.5, height)} fill={barColor} rx="1" />;
+                      })}
+                      <polyline points={renderMacd.map((val, i) => `${i * step + (step / 2)},${50 - (val / maxAbs) * 45}`).join(" ")} fill="none" stroke={MACD_BLUE} strokeWidth="1.2" strokeLinejoin="round" />
+                      <polyline points={renderSignal.map((val, i) => `${i * step + (step / 2)},${50 - (val / maxAbs) * 45}`).join(" ")} fill="none" stroke={SIGNAL_ORANGE} strokeWidth="1.2" strokeLinejoin="round" />
+                    </svg>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* BOTTOM PANELS */}
+            <div className="min-h-[300px] shrink-0 flex flex-row gap-3">
+              {/* RSI PANEL (Perfect Stack, No Scrollbar) */}
+              <div className="flex-[1.2] bg-[#040608] rounded-[16px] border border-white/5 p-4 flex flex-col relative shadow-[inset_0_0_20px_rgba(0,0,0,0.8)] overflow-hidden">
+                <span className="font-display text-[10px] font-bold text-[#8b99ae] tracking-[2px] uppercase mb-3 flex items-center gap-1.5 shrink-0 z-10">
+                  <Zap size={12} className="text-[#00d4ff]" /> Market Strength (RSI)
+                </span>
+                
+                <div className="flex-1 flex flex-col justify-between z-10 min-h-0">
+                  {bullishCoins.map((c) => (
+                    <div key={c.sym} className="flex items-center justify-between px-3 py-1.5 rounded-[6px] bg-gradient-to-r from-[#00d4ff]/10 to-transparent border border-[#00d4ff]/15 shrink-0">
+                      <div className="flex items-center gap-2"><TrendingUp size={12} className="text-[#00d4ff]" /><span className="font-mono text-[10px] font-bold text-white">{c.sym.replace("/USDT", "")}</span></div>
+                      <span className="font-num text-[12px] font-bold text-[#00d4ff]" style={{ textShadow: `0 0 8px ${C_CYAN}` }}>{c.rsi.toFixed(1)}</span>
+                    </div>
+                  ))}
+                  <div className="h-[2px] w-full bg-white/5 my-1 shrink-0 rounded-full" />
+                  {bearishCoins.map((c) => (
+                    <div key={c.sym} className="flex items-center justify-between px-3 py-1.5 rounded-[6px] bg-gradient-to-r from-[#ff2a6d]/10 to-transparent border border-[#ff2a6d]/15 shrink-0">
+                      <div className="flex items-center gap-2"><TrendingDown size={12} className="text-[#ff2a6d]" /><span className="font-mono text-[10px] font-bold text-white">{c.sym.replace("/USDT", "")}</span></div>
+                      <span className="font-num text-[12px] font-bold text-[#ff2a6d]" style={{ textShadow: `0 0 8px ${C_PINK}` }}>{c.rsi.toFixed(1)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* FUNDING GAUGE */}
+              <div className="flex-[1] bg-[#040608] rounded-[16px] border border-white/5 p-4 flex flex-col items-center justify-between relative shadow-[inset_0_0_20px_rgba(0,0,0,0.8)] overflow-hidden">
+                <div className={`absolute -bottom-8 w-32 h-32 blur-[40px] rounded-full pointer-events-none ${isBullishFunding ? 'bg-[#00ff9d]/10' : 'bg-[#ff2a6d]/10'}`} />
+                <div className="w-full flex justify-between items-center shrink-0 mb-2">
+                  <span className="font-display text-[10px] font-bold text-[#8b99ae] tracking-[2px] uppercase flex items-center gap-1.5"><Gauge size={13} className={isBullishFunding ? "text-[#00ff9d]" : "text-[#ff2a6d]"} /> Funding Rate</span>
+                  <span className="font-num text-[14px] font-black tracking-wide text-white bg-black/40 px-2.5 py-0.5 rounded-[4px] border border-white/5" style={{ textShadow: `0 0 15px ${isBullishFunding ? C_GREEN : C_PINK}` }}>{isBullishFunding ? "+" : ""}{fundingRate.toFixed(4)}%</span>
+                </div>
+                <div className="relative w-full max-w-[200px] aspect-[2/1] flex items-end justify-center mt-auto mb-3">
+                  <svg className="w-full h-full absolute bottom-0 left-0 overflow-visible" viewBox="0 0 100 50" preserveAspectRatio="xMidYMax meet">
+                    <defs><linearGradient id="neonGlow" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stopColor={C_PINK} /><stop offset="50%" stopColor="#b026ff" /><stop offset="100%" stopColor={C_GREEN} /></linearGradient></defs>
+                    <path d="M 10 45 A 40 40 0 0 1 90 45" fill="none" stroke="#11161d" strokeWidth="8" strokeLinecap="round" />
+                    <path d="M 10 45 A 40 40 0 0 1 90 45" fill="none" stroke="url(#neonGlow)" strokeWidth="4" strokeLinecap="round" opacity="0.95" />
+                    <line x1="50" y1="5" x2="50" y2="12" stroke="#ffffff" strokeOpacity="0.4" strokeWidth="2" strokeLinecap="round" />
+                  </svg>
+                  <div className="absolute bottom-[2px] w-4 h-[95%] origin-bottom transition-transform duration-700 ease-out z-10 flex flex-col items-center" style={{ transform: `rotate(${needleRotation}deg)` }}>
+                    <div className="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-b-[10px] border-b-white" style={{ filter: `drop-shadow(0 0 6px ${isBullishFunding ? C_GREEN : C_PINK})` }} />
+                    <div className="w-[3px] flex-1 bg-white" style={{ boxShadow: `0 0 10px ${isBullishFunding ? C_GREEN : C_PINK}` }} />
+                    <div className="w-3 h-3 bg-white rounded-full absolute -bottom-1.5" style={{ boxShadow: `0 0 10px ${isBullishFunding ? C_GREEN : C_PINK}` }} />
+                  </div>
+                </div>
+                <div className="w-full flex justify-between font-mono text-[10px] font-black text-slate-300 tracking-wider px-2 shrink-0 mt-2 relative z-10">
+                  <span className="text-[#ff2a6d] bg-[#ff2a6d]/10 px-2 py-0.5 rounded-[4px] border border-[#ff2a6d]/20">-0.1%</span>
+                  <span className="text-slate-400 font-bold self-center opacity-50">0.00%</span>
+                  <span className="text-[#00ff9d] bg-[#00ff9d]/10 px-2 py-0.5 rounded-[4px] border border-[#00ff9d]/20">+0.1%</span>
+                </div>
+              </div>
             </div>
           </div>
+        ) : (
+          /* ── TECHNICAL 2: PREDICTIVE DASHBOARD AREA ── */
+          <div className="w-full h-full flex flex-col gap-3 absolute inset-0 overflow-y-auto custom-scrollbar pr-0.5 pb-2">
+            
+            {/* ROW 1: EXPANDED TRI-PANEL CANDLE PREDICTION FRAME */}
+            <div className="bg-[#040608] rounded-[16px] border border-white/5 p-5 flex flex-col relative overflow-hidden shadow-[inset_0_0_20px_rgba(0,0,0,0.8)] min-h-[250px] shrink-0">
+              <div className="absolute top-0 right-0 w-[180px] h-[180px] opacity-[0.05] blur-[50px] rounded-full pointer-events-none"
+                   style={{ backgroundColor: nextCandlePred.bias === "GREEN" ? C_GREEN : C_PINK }} />
+              
+              <div className="flex items-center justify-between border-b border-white/5 pb-3 mb-4">
+                <span className="font-display text-[12px] font-black text-[#8b99ae] tracking-[2px] uppercase flex items-center gap-2">
+                  <Layers size={16} className="text-[#b026ff]" /> AI Predictive Matrix
+                </span>
+                <span className="font-mono text-[10px] bg-white/5 text-white/50 px-2.5 py-1 rounded-[4px] tracking-widest border border-white/5 flex items-center gap-1.5">
+                  <Target size={12} className="text-[#00d4ff]" /> LIVE EVALUATION
+                </span>
+              </div>
 
-          {/* Large, Explicit Range Numbers */}
-          <div className="w-full flex justify-between font-mono text-[10px] font-black text-slate-300 tracking-wider px-2 shrink-0 mt-2 relative z-10">
-            <span className="text-[#ff2a6d] bg-[#ff2a6d]/10 px-2 py-0.5 rounded-[4px] border border-[#ff2a6d]/20">-0.1%</span>
-            <span className="text-slate-400 font-bold self-center opacity-50">0.00%</span>
-            <span className="text-[#00ff9d] bg-[#00ff9d]/10 px-2 py-0.5 rounded-[4px] border border-[#00ff9d]/20">+0.1%</span>
+              {/* Tri-Column Layout */}
+              <div className="grid grid-cols-3 gap-3 divide-x divide-white/5 items-center w-full mb-2">
+                
+                {/* 1. Locked Current Candle Prediction */}
+                <div className="flex flex-col gap-1 pr-3">
+                  <div className="font-mono text-[9px] text-[#4f5b70] uppercase tracking-widest">Current Candle</div>
+                  {lockedPrediction ? (
+                    <div className="font-display text-[16px] font-black uppercase flex items-center gap-1.5"
+                         style={{ color: lockedPrediction.bias === "GREEN" ? C_GREEN : C_PINK }}>
+                      {lockedPrediction.bias === "GREEN" ? "BULLISH" : "BEARISH"}
+                      {lockedPrediction.bias === "GREEN" ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
+                      <span className="text-[12px] opacity-60">({lockedPrediction.prob}%)</span>
+                    </div>
+                  ) : (
+                    <div className="font-display text-[12px] font-bold text-[#4f5b70] uppercase flex items-center h-[24px] gap-1.5">
+                      <Clock size={12} /> AWAITING DATA...
+                    </div>
+                  )}
+                </div>
+
+                {/* 2. Live Next Candle Projection */}
+                <div className="flex flex-col gap-1 px-4">
+                  <div className="font-mono text-[9px] text-[#4f5b70] uppercase tracking-widest">Next Candle</div>
+                  <div className="font-display text-[20px] font-black uppercase flex items-center gap-2"
+                       style={{ color: nextCandlePred.bias === "GREEN" ? C_GREEN : C_PINK, textShadow: `0 0 20px ${nextCandlePred.bias === "GREEN" ? C_GREEN : C_PINK}50` }}>
+                    {nextCandlePred.bias === "GREEN" ? "GREEN" : "RED"} 
+                    <span className="text-[14px] opacity-70">({nextCandlePred.prob}%)</span>
+                  </div>
+                </div>
+
+                {/* 3. True Live Accuracy Tracker */}
+                <div className="flex flex-col gap-1 pl-4 text-right items-end justify-center">
+                  <div className="font-mono text-[9px] text-[#4f5b70] uppercase tracking-widest">Predictions</div>
+                  <div className="font-num text-[24px] font-black text-white flex items-baseline gap-1">
+                    <span className="text-[#00d4ff]" style={{ textShadow: `0 0 12px ${C_CYAN}60` }}>{correctCount}</span>
+                    <span className="text-[14px] text-slate-500">/{totalCount}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-auto pt-4 border-t border-white/5 flex flex-col gap-2">
+                {nextCandlePred.reasons.map((reason, idx) => (
+                  <div key={idx} className="flex items-start gap-2 text-[10px] font-mono text-slate-300 leading-relaxed bg-white/[0.02] py-2 px-3 rounded-[6px]">
+                    <span className="text-white/40 font-bold">0{idx + 1}.</span>
+                    <span>{reason}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* ROW 2: VOLUME DELTA BARS WITH DOMINANCE ILLUMINATION */}
+            <div className="bg-[#040608] rounded-[16px] border border-white/5 p-5 flex flex-col shrink-0 transition-all duration-700 min-h-[180px]" style={containerGlowStyle}>
+              <span className="font-display text-[11px] font-black text-[#8b99ae] tracking-[2px] uppercase mb-5 flex items-center gap-2 relative z-10">
+                <BarChart3 size={15} className="text-[#00ff9d]" /> Volume Delta Bars
+              </span>
+
+              <div className="w-full flex items-center justify-around gap-6 py-4 px-5 bg-black/40 rounded-[12px] border border-white/5 relative z-10">
+                
+                {/* BUY VOLUME BAR (Dynamic Glow + Heavy USD Inside) */}
+                <div className="flex flex-col items-center gap-2 flex-1 max-w-[120px]">
+                  <div className="font-mono text-[10px] text-[#4f5b70] uppercase font-bold tracking-wider mb-1">Buy Vol</div>
+                  <div className="relative w-full h-[90px] bg-white/[0.02] border border-white/10 rounded-[10px] overflow-hidden backdrop-blur-md flex items-center justify-center transition-all duration-500"
+                       style={{ boxShadow: `0 0 ${buyRatio * 50}px ${C_GREEN}${Math.floor(buyRatio * 70)}` }}>
+                    <div className="absolute bottom-0 left-0 w-full transition-all duration-700 ease-out" style={{ height: `${Math.max(5, buyRatio * 100)}%`, background: `linear-gradient(0deg, ${C_CYAN}40 0%, ${C_GREEN} 100%)` }} />
+                    <span className="relative z-10 font-mono text-[12px] font-black text-white drop-shadow-[0_2px_6px_rgba(0,0,0,1)] tracking-wide">
+                      ${compactUsd(buyUsd)}
+                    </span>
+                  </div>
+                  <div className="flex flex-col items-center mt-1">
+                    <span className="font-num text-[14px] font-black text-[#00ff9d] tracking-wide">{(buyRatio * 100).toFixed(1)}%</span>
+                  </div>
+                </div>
+
+                <div className="font-display text-[14px] font-black text-white/20 italic tracking-widest shrink-0">VS</div>
+
+                {/* SELL VOLUME BAR (Dynamic Glow + Heavy USD Inside) */}
+                <div className="flex flex-col items-center gap-2 flex-1 max-w-[120px]">
+                  <div className="font-mono text-[10px] text-[#4f5b70] uppercase font-bold tracking-wider mb-1">Sell Vol</div>
+                  <div className="relative w-full h-[90px] bg-white/[0.02] border border-white/10 rounded-[10px] overflow-hidden backdrop-blur-md flex items-center justify-center transition-all duration-500"
+                       style={{ boxShadow: `0 0 ${sellRatio * 50}px ${C_PINK}${Math.floor(sellRatio * 70)}` }}>
+                    <div className="absolute bottom-0 left-0 w-full transition-all duration-700 ease-out" style={{ height: `${Math.max(5, sellRatio * 100)}%`, background: `linear-gradient(0deg, #50051e 0%, ${C_PINK} 100%)` }} />
+                    <span className="relative z-10 font-mono text-[12px] font-black text-white drop-shadow-[0_2px_6px_rgba(0,0,0,1)] tracking-wide">
+                      ${compactUsd(sellUsd)}
+                    </span>
+                  </div>
+                  <div className="flex flex-col items-center mt-1">
+                    <span className="font-num text-[14px] font-black text-[#ff2a6d] tracking-wide">{(sellRatio * 100).toFixed(1)}%</span>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+            {/* ROW 3: CUBIC BEZIER SMOOTHED DELTA VECTOR VOLUME GRAPH */}
+            <div className="bg-[#040608] rounded-[16px] border border-white/5 p-4 flex flex-col shadow-[inset_0_0_20px_rgba(0,0,0,0.8)] flex-shrink-0 min-h-[260px]">
+              <div className="flex items-center justify-between mb-3 shrink-0">
+                <span className="font-display text-[11px] font-black text-[#8b99ae] tracking-[2px] uppercase flex items-center gap-1.5">
+                  <Activity size={14} className="text-[#00d4ff]" /> Delta Vector Volume Graph
+                </span>
+                <div className="flex items-center gap-3 font-mono text-[9px] tracking-wider text-slate-400">
+                  <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-[#00ff9d]" style={{boxShadow: `0 0 6px ${C_GREEN}`}}/> Buy Dominance</span>
+                  <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-[#ff2a6d]" style={{boxShadow: `0 0 6px ${C_PINK}`}}/> Sell Dominance</span>
+                </div>
+              </div>
+
+              {/* Explicit X-Axis Scroll Container */}
+              <div ref={volGraphScrollRef} className="flex-1 w-full relative bg-black/20 rounded-[8px] border border-white/[0.03] p-1 overflow-x-auto overflow-y-hidden custom-scrollbar scroll-smooth">
+                {buyVolumeHistory.length < 2 ? (
+                  <div className="absolute inset-0 flex items-center justify-center font-mono text-[10px] text-[#4f5b70]">
+                    SYNCHRONIZING VOLUME LINE DATASTREAM...
+                  </div>
+                ) : (
+                  <div style={{ width: `${volSvgWidth}px`, height: "100%", position: "relative" }}>
+                    <svg width="100%" height="100%" className="overflow-visible block" viewBox={`0 0 ${volSvgWidth} 100`} preserveAspectRatio="none">
+                      {/* Grid wires stretching all the way through the extra space */}
+                      <line x1="0" y1="25" x2={volSvgWidth} y2="25" stroke="white" strokeOpacity="0.02" strokeWidth="0.5" />
+                      <line x1="0" y1="50" x2={volSvgWidth} y2="50" stroke="white" strokeOpacity="0.05" strokeDasharray="3 3" strokeWidth="1" />
+                      <line x1="0" y1="75" x2={volSvgWidth} y2="75" stroke="white" strokeOpacity="0.02" strokeWidth="0.5" />
+                      
+                      {/* Cubic Bezier Smoothed Buyer Line (Green) */}
+                      <path
+                        d={generateSmoothPath(buyVolumeHistory.map((val, idx) => [idx * volStep, 95 - (val / maxVolVal) * 85]))}
+                        fill="none" stroke={C_GREEN} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" style={{ filter: `drop-shadow(0 0 6px ${C_GREEN}60)` }}
+                      />
+
+                      {/* Cubic Bezier Smoothed Seller Line (Red) */}
+                      <path
+                        d={generateSmoothPath(sellVolumeHistory.map((val, idx) => [idx * volStep, 95 - (val / maxVolVal) * 85]))}
+                        fill="none" stroke={C_PINK} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" style={{ filter: `drop-shadow(0 0 6px ${C_PINK}60)` }}
+                      />
+                    </svg>
+                  </div>
+                )}
+              </div>
+            </div>
+
           </div>
-        </div>
-
+        )}
       </div>
     </div>
   );
