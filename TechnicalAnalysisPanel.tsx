@@ -90,18 +90,15 @@ export default function TechnicalAnalysisPanel() {
   const lastHist = macdHist[macdHist.length - 1] || 0;
   const maxAbs = Math.max(...renderMacd.map(Math.abs), ...renderSignal.map(Math.abs), ...macdHist.map(Math.abs), 0.0001);
 
-  // ─── 2. RSI SCANNERS & GAUGE (FIXED: EXPLICIT 14 PAIR MAPPING) ───
+  // ─── 2. RSI SCANNERS & GAUGE ───
   const { bullishCoins, bearishCoins } = useMemo(() => {
-    // Map exactly the 14 Target Pairs, fallback to 50 if the store hasn't initialized it yet
     const metricsArr = TARGET_PAIRS.map(sym => ({
       sym,
       rsi: coinMetrics[sym]?.rsi ?? 50 
     }));
 
-    // Sort by RSI highest to lowest
     const sortedMetrics = [...metricsArr].sort((a, b) => b.rsi - a.rsi);
     
-    // Explicitly grab the top 3 and absolute bottom 3 to guarantee zero overlap
     const top = sortedMetrics.slice(0, 3);
     const bottom = sortedMetrics.slice(-3).reverse(); 
     
@@ -173,7 +170,7 @@ export default function TechnicalAnalysisPanel() {
     };
   };
 
-  // ─── BULLETPROOF STATE MEMORY FOR PREDICTIONS ───
+  // ─── INFINITE STATE MEMORY FOR PREDICTIONS ───
   const liveAccuracyRef = useRef<boolean[]>([]);
   const lockedPredRef = useRef<{bias: string, prob: number} | null>(null);
   
@@ -213,7 +210,7 @@ export default function TechnicalAnalysisPanel() {
       if (lockedPredRef.current) {
         const actualBias = previousCandle.c >= previousCandle.o ? "GREEN" : "RED";
         const isCorrect = lockedPredRef.current.bias === actualBias;
-        liveAccuracyRef.current = [...liveAccuracyRef.current, isCorrect].slice(-10);
+        liveAccuracyRef.current = [...liveAccuracyRef.current, isCorrect];
       }
 
       const liveRsi = coinMetrics[activePair]?.rsi || 50;
@@ -230,8 +227,10 @@ export default function TechnicalAnalysisPanel() {
     return evaluatePrediction(candles, liveRsi);
   }, [candles, coinMetrics, activePair]);
 
+  // Compute Live Math
   const correctCount = liveAccuracyRef.current.filter(Boolean).length;
   const totalCount = liveAccuracyRef.current.length;
+  const accuracyPercent = totalCount > 0 ? Math.round((correctCount / totalCount) * 100) : 0;
   const lockedPrediction = lockedPredRef.current;
 
   // ─── 4. ACTIVE LIQUID GLASS VOLUME CALCULATIONS ───
@@ -355,7 +354,7 @@ export default function TechnicalAnalysisPanel() {
 
             {/* BOTTOM PANELS */}
             <div className="min-h-[300px] shrink-0 flex flex-row gap-3">
-              {/* RSI PANEL (Perfect Stack, No Scrollbar) */}
+              {/* RSI PANEL */}
               <div className="flex-[1.2] bg-[#040608] rounded-[16px] border border-white/5 p-4 flex flex-col relative shadow-[inset_0_0_20px_rgba(0,0,0,0.8)] overflow-hidden">
                 <span className="font-display text-[10px] font-bold text-[#8b99ae] tracking-[2px] uppercase mb-3 flex items-center gap-1.5 shrink-0 z-10">
                   <Zap size={12} className="text-[#00d4ff]" /> Market Strength (RSI)
@@ -454,12 +453,23 @@ export default function TechnicalAnalysisPanel() {
                   </div>
                 </div>
 
-                {/* 3. True Live Accuracy Tracker */}
+                {/* 3. True Live Accuracy Tracker (Uncapped with ALWAYS VISIBLE Percentage) */}
                 <div className="flex flex-col gap-1 pl-4 text-right items-end justify-center">
                   <div className="font-mono text-[9px] text-[#4f5b70] uppercase tracking-widest">Predictions</div>
-                  <div className="font-num text-[24px] font-black text-white flex items-baseline gap-1">
-                    <span className="text-[#00d4ff]" style={{ textShadow: `0 0 12px ${C_CYAN}60` }}>{correctCount}</span>
-                    <span className="text-[14px] text-slate-500">/{totalCount}</span>
+                  <div className="flex items-center gap-1.5">
+                    <div className="font-num text-[24px] font-black text-white flex items-baseline gap-1">
+                      <span className="text-[#00d4ff]" style={{ textShadow: `0 0 12px ${C_CYAN}60` }}>{correctCount}</span>
+                      <span className="text-[14px] text-slate-500">/{totalCount}</span>
+                    </div>
+                    {totalCount > 0 ? (
+                      <span className="font-num text-[14px] font-black" style={{ color: accuracyPercent >= 50 ? C_GREEN : C_PINK }}>
+                        ({accuracyPercent}%)
+                      </span>
+                    ) : (
+                      <span className="font-num text-[14px] font-black text-[#4f5b70]">
+                        (--%)
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
