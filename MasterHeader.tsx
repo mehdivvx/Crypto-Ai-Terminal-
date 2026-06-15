@@ -45,7 +45,6 @@ export default function MasterHeader() {
   const C_GREEN = "#00ff9d";
   const C_RED = "#ff2a6d";
   const C_CYAN = "#00d4ff";
-  const C_PINK = "#ff2a6d";
   const activeColor = isUp ? C_GREEN : C_RED;
 
   const tabIndex = currentTab === "TERMINAL" ? 0 : currentTab === "PORTFOLIO" ? 1 : 2;
@@ -76,17 +75,25 @@ export default function MasterHeader() {
         />
       </div>
 
-      {/* ── ROW 1 ── */}
-      <div className="flex items-center justify-between border-b border-white/5 pb-2 mb-1.5 relative z-10 gap-3 flex-nowrap whitespace-nowrap">
+      {/* ── ROW 1 (Elevated to z-20 to stack completely over row 2 elements) ── */}
+      <div className="flex items-center justify-between border-b border-white/5 pb-2 mb-1.5 relative z-20 gap-3 flex-nowrap whitespace-nowrap">
         
         {/* Left: Logo & Tabs */}
         <div className="flex items-center gap-6 flex-shrink-0">
-          <span className="font-display text-[17px] font-bold tracking-[1.5px] drop-shadow-md flex-shrink-0">
-            <span className="text-white">CRYPTO</span>
-            <span className="text-[#00d4ff] drop-shadow-[0_0_10px_rgba(0,212,255,0.6)]"> TERMINAL</span>
+          
+          {/* UPDATED LOGO: Locked Maximum Illumination */}
+          <span className="font-sans text-[24px] font-light tracking-[0.2em] flex-shrink-0 flex items-center">
+            <span className="text-white drop-shadow-md">CRYPTO</span>
+            <span 
+              className="ml-2 font-normal text-[#e6ffff]"
+              style={{ textShadow: '0 0 5px #00d4ff, 0 0 15px #00d4ff, 0 0 30px #00d4ff' }}
+            >
+              TERMINAL
+            </span>
           </span>
 
-          <div className="flex items-center bg-[#0d0f14] p-1 rounded-lg border border-[#00d4ff]/10 shadow-[0_0_1px_1px_rgba(0,0,0,0.8)] relative overflow-hidden flex-shrink-0 select-none">
+          {/* Tab Navigation Menu */}
+          <div className="flex items-center bg-[#0d0f14] p-1 rounded-lg border border-[#00d4ff]/10 shadow-[0_0_1px_1px_rgba(0,0,0,0.8)] relative overflow-hidden flex-shrink-0 select-none ml-16">
             <motion.div
               className="absolute top-1 bottom-1 z-0 bg-[#1c2a38] rounded-md shadow-[0_0_15px_rgba(0,212,255,0.4)]"
               initial={false}
@@ -187,10 +194,10 @@ export default function MasterHeader() {
           </div>
         </div>
 
-        {/* Right: Live Price */}
+        {/* Right: Live Price (Bigger Font) */}
         <div className="flex items-center justify-end flex-shrink-0">
           <div className="flex items-baseline gap-2">
-            <span className="font-num text-[24px] font-bold tracking-wide drop-shadow-md" style={{ color: activeColor, textShadow: `0 0 15px ${activeColor}80` }}>
+            <span className="font-num text-[32px] font-bold tracking-wide drop-shadow-md" style={{ color: activeColor, textShadow: `0 0 15px ${activeColor}80` }}>
               {displayPrice}
             </span>
             <span className="font-mono text-[10px] font-bold" style={{ color: activeColor }}>

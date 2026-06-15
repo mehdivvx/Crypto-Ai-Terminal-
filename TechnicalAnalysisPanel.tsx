@@ -11,6 +11,14 @@ const TARGET_PAIRS = [
   "ENA/USDT", "TAO/USDT", "ZEC/USDT", "SUI/USDT", "XAUT/USDT"
 ];
 
+// ─── UN-WIPEABLE MODULE MEMORY CACHE ───
+// This exists outside the React component, so it survives tab switching and unmounts!
+const PREDICTION_MEMORY = {
+  liveAccuracy: [] as boolean[],
+  lockedPred: null as {bias: string, prob: number} | null,
+  context: { pair: "", tf: "", sig: null as string | null }
+};
+
 // Helper: Cubic Bezier Path Generator for Smooth Graphs
 function generateSmoothPath(points: number[][]) {
   if (points.length === 0) return "";
@@ -99,8 +107,9 @@ export default function TechnicalAnalysisPanel() {
 
     const sortedMetrics = [...metricsArr].sort((a, b) => b.rsi - a.rsi);
     
-    const top = sortedMetrics.slice(0, 3);
-    const bottom = sortedMetrics.slice(-3).reverse(); 
+    const halfIndex = Math.ceil(sortedMetrics.length / 2);
+    const top = sortedMetrics.slice(0, halfIndex).slice(0, 3);
+    const bottom = sortedMetrics.slice(halfIndex).reverse().slice(0, 3);
     
     return { bullishCoins: top, bearishCoins: bottom };
   }, [coinMetrics]);
@@ -170,15 +179,7 @@ export default function TechnicalAnalysisPanel() {
     };
   };
 
-  // ─── INFINITE STATE MEMORY FOR PREDICTIONS ───
-  const liveAccuracyRef = useRef<boolean[]>([]);
-  const lockedPredRef = useRef<{bias: string, prob: number} | null>(null);
-  
-  const trackingContextRef = useRef<{pair: string, tf: string, sig: string | null}>({
-    pair: activePair,
-    tf: timeframe,
-    sig: null
-  });
+  // ─── PERSISTENT STATE MEMORY ───
   const [renderTick, setRenderTick] = useState(0);
 
   useEffect(() => {
@@ -188,36 +189,36 @@ export default function TechnicalAnalysisPanel() {
     const previousCandle = candles[candles.length - 2];
     const candleSig = `${candles.length}-${currentCandle.o}`;
     
-    const ctx = trackingContextRef.current;
+    const ctx = PREDICTION_MEMORY.context;
 
     // 1. HARD RESET
     if (ctx.pair !== activePair || ctx.tf !== timeframe) {
-      liveAccuracyRef.current = [];
-      lockedPredRef.current = null;
-      trackingContextRef.current = { pair: activePair, tf: timeframe, sig: candleSig };
+      PREDICTION_MEMORY.liveAccuracy = [];
+      PREDICTION_MEMORY.lockedPred = null;
+      PREDICTION_MEMORY.context = { pair: activePair, tf: timeframe, sig: candleSig };
       setRenderTick(t => t + 1);
       return; 
     }
 
     // 2. INITIAL LOAD
     if (ctx.sig === null) {
-      trackingContextRef.current.sig = candleSig;
+      PREDICTION_MEMORY.context.sig = candleSig;
       return; 
     }
 
     // 3. TRUE CANDLE ROLLOVER
     if (ctx.sig !== candleSig) {
-      if (lockedPredRef.current) {
+      if (PREDICTION_MEMORY.lockedPred) {
         const actualBias = previousCandle.c >= previousCandle.o ? "GREEN" : "RED";
-        const isCorrect = lockedPredRef.current.bias === actualBias;
-        liveAccuracyRef.current = [...liveAccuracyRef.current, isCorrect];
+        const isCorrect = PREDICTION_MEMORY.lockedPred.bias === actualBias;
+        PREDICTION_MEMORY.liveAccuracy = [...PREDICTION_MEMORY.liveAccuracy, isCorrect];
       }
 
       const liveRsi = coinMetrics[activePair]?.rsi || 50;
       const newLockedPred = evaluatePrediction(candles.slice(0, -1), liveRsi);
-      lockedPredRef.current = newLockedPred;
+      PREDICTION_MEMORY.lockedPred = newLockedPred;
 
-      trackingContextRef.current.sig = candleSig;
+      PREDICTION_MEMORY.context.sig = candleSig;
       setRenderTick(t => t + 1);
     }
   }, [candles, activePair, timeframe, coinMetrics]); 
@@ -227,11 +228,11 @@ export default function TechnicalAnalysisPanel() {
     return evaluatePrediction(candles, liveRsi);
   }, [candles, coinMetrics, activePair]);
 
-  // Compute Live Math
-  const correctCount = liveAccuracyRef.current.filter(Boolean).length;
-  const totalCount = liveAccuracyRef.current.length;
+  // Compute Live Math reading from the Module Cache
+  const correctCount = PREDICTION_MEMORY.liveAccuracy.filter(Boolean).length;
+  const totalCount = PREDICTION_MEMORY.liveAccuracy.length;
   const accuracyPercent = totalCount > 0 ? Math.round((correctCount / totalCount) * 100) : 0;
-  const lockedPrediction = lockedPredRef.current;
+  const lockedPrediction = PREDICTION_MEMORY.lockedPred;
 
   // ─── 4. ACTIVE LIQUID GLASS VOLUME CALCULATIONS ───
   const { buyRatio, sellRatio, buyUsd, sellUsd, buyVolumeHistory, sellVolumeHistory, maxVolVal } = useMemo(() => {
@@ -453,10 +454,10 @@ export default function TechnicalAnalysisPanel() {
                   </div>
                 </div>
 
-                {/* 3. True Live Accuracy Tracker (Uncapped with ALWAYS VISIBLE Percentage) */}
+                {/* 3. True Live Accuracy Tracker */}
                 <div className="flex flex-col gap-1 pl-4 text-right items-end justify-center">
                   <div className="font-mono text-[9px] text-[#4f5b70] uppercase tracking-widest">Predictions</div>
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center justify-end gap-1.5">
                     <div className="font-num text-[24px] font-black text-white flex items-baseline gap-1">
                       <span className="text-[#00d4ff]" style={{ textShadow: `0 0 12px ${C_CYAN}60` }}>{correctCount}</span>
                       <span className="text-[14px] text-slate-500">/{totalCount}</span>
@@ -492,7 +493,7 @@ export default function TechnicalAnalysisPanel() {
 
               <div className="w-full flex items-center justify-around gap-6 py-4 px-5 bg-black/40 rounded-[12px] border border-white/5 relative z-10">
                 
-                {/* BUY VOLUME BAR (Dynamic Glow + Heavy USD Inside) */}
+                {/* BUY VOLUME BAR */}
                 <div className="flex flex-col items-center gap-2 flex-1 max-w-[120px]">
                   <div className="font-mono text-[10px] text-[#4f5b70] uppercase font-bold tracking-wider mb-1">Buy Vol</div>
                   <div className="relative w-full h-[90px] bg-white/[0.02] border border-white/10 rounded-[10px] overflow-hidden backdrop-blur-md flex items-center justify-center transition-all duration-500"
@@ -509,7 +510,7 @@ export default function TechnicalAnalysisPanel() {
 
                 <div className="font-display text-[14px] font-black text-white/20 italic tracking-widest shrink-0">VS</div>
 
-                {/* SELL VOLUME BAR (Dynamic Glow + Heavy USD Inside) */}
+                {/* SELL VOLUME BAR */}
                 <div className="flex flex-col items-center gap-2 flex-1 max-w-[120px]">
                   <div className="font-mono text-[10px] text-[#4f5b70] uppercase font-bold tracking-wider mb-1">Sell Vol</div>
                   <div className="relative w-full h-[90px] bg-white/[0.02] border border-white/10 rounded-[10px] overflow-hidden backdrop-blur-md flex items-center justify-center transition-all duration-500"

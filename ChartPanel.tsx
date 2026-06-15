@@ -20,6 +20,7 @@ export default function ChartPanel() {
 
   // --- TRADINGVIEW ENGINE (High Performance Refs) ---
   const scrollXRef = useRef(0);
+  const scrollYRef = useRef(0); // Tracks vertical panning offset
   const zoomRef = useRef(1);
   const isDragging = useRef(false);
   const lastMouse = useRef({ x: 0, y: 0 });
@@ -37,6 +38,7 @@ export default function ChartPanel() {
   useEffect(() => {
     if (initializedPair.current !== activePair) {
       scrollXRef.current = 0;
+      scrollYRef.current = 0; // Reset vertical pan on pair change
       zoomRef.current = 1;
       initializedPair.current = activePair;
     }
@@ -90,8 +92,9 @@ export default function ChartPanel() {
     const paddedMxH = mxH + rng * 0.1;
     const paddedRng = paddedMxH - paddedMnL;
 
-    const sy = (v: number) => pad.t + (1 - (v - paddedMnL) / paddedRng) * chartH;
-    const getPriceAtY = (y: number) => paddedMnL + paddedRng * (1 - (y - pad.t) / chartH);
+    // Injected scrollYRef dynamic shifts to handle the vertical transformations smoothly
+    const sy = (v: number) => pad.t + (1 - (v - paddedMnL) / paddedRng) * chartH + scrollYRef.current;
+    const getPriceAtY = (y: number) => paddedMnL + paddedRng * (1 - (y - pad.t - scrollYRef.current) / chartH);
 
     ctx.strokeStyle = 'rgba(255,255,255,0.05)';
     ctx.lineWidth = 1;
@@ -113,6 +116,7 @@ export default function ChartPanel() {
 
       const vH = (c.v / mxV) * maxVolHeight;
       ctx.fillStyle = c.c >= c.o ? 'rgba(0,255,157,0.35)' : 'rgba(255,42,109,0.35)';
+      // Volume bars are strictly layout-pinned and do not slide out of view vertically
       ctx.fillRect(x - cW * 0.4, H - pad.b - vH, cW * 0.8, vH);
     }
 
@@ -200,49 +204,47 @@ export default function ChartPanel() {
 
     // ─── UPGRADED DYNAMIC LIVE PRICE & CANDLE COUNTDOWN ───
     const p = LIVE_PRICES[activePair || "BTC/USDT"];
-    if (p && p >= paddedMnL && p <= paddedMxH) {
+    if (p) {
       const py = sy(p);
       
-      // Determine color based on current candle direction
-      const currentCandle = candles[candles.length - 1];
-      const isLiveBullish = currentCandle ? p >= currentCandle.o : true;
-      
-      const liveLineColor = isLiveBullish ? 'rgba(0, 255, 157, 0.4)' : 'rgba(255, 42, 109, 0.4)';
-      const liveBgColor = isLiveBullish ? 'rgba(0, 255, 157, 0.15)' : 'rgba(255, 42, 109, 0.15)';
-      const liveTextColor = isLiveBullish ? '#00ff9d' : '#ff2a6d';
+      // Changed verification check from fixed arrays to canvas bounds to prevent disappearing live tag on pan
+      if (py >= pad.t && py <= H - pad.b) {
+        const currentCandle = candles[candles.length - 1];
+        const isLiveBullish = currentCandle ? p >= currentCandle.o : true;
+        
+        const liveLineColor = isLiveBullish ? 'rgba(0, 255, 157, 0.4)' : 'rgba(255, 42, 109, 0.4)';
+        const liveBgColor = isLiveBullish ? 'rgba(0, 255, 157, 0.15)' : 'rgba(255, 42, 109, 0.15)';
+        const liveTextColor = isLiveBullish ? '#00ff9d' : '#ff2a6d';
 
-      // Draw lighter, wider-spaced dashed line
-      ctx.strokeStyle = liveLineColor; 
-      ctx.lineWidth = 1; 
-      ctx.setLineDash([4, 4]); 
-      ctx.beginPath(); ctx.moveTo(pad.l, py); ctx.lineTo(W - pad.r, py); ctx.stroke();
-      ctx.setLineDash([]);
-      
-      let ms = 15 * 60000;
-      if (timeframe === "5m") ms = 5 * 60000;
-      else if (timeframe === "30m") ms = 30 * 60000;
-      else if (timeframe === "1h") ms = 60 * 60000;
-      else if (timeframe === "4h") ms = 240 * 60000;
+        ctx.strokeStyle = liveLineColor; 
+        ctx.lineWidth = 1; 
+        ctx.setLineDash([4, 4]); 
+        ctx.beginPath(); ctx.moveTo(pad.l, py); ctx.lineTo(W - pad.r, py); ctx.stroke();
+        ctx.setLineDash([]);
+        
+        let ms = 15 * 60000;
+        if (timeframe === "5m") ms = 5 * 60000;
+        else if (timeframe === "30m") ms = 30 * 60000;
+        else if (timeframe === "1h") ms = 60 * 60000;
+        else if (timeframe === "4h") ms = 240 * 60000;
 
-      const rem = ms - (Date.now() % ms);
-      const h = Math.floor(rem / 3600000);
-      const m = Math.floor((rem % 3600000) / 60000);
-      const s = Math.floor((rem % 60000) / 1000);
-      const timerStr = `${h > 0 ? h + ':' : ''}${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+        const rem = ms - (Date.now() % ms);
+        const h = Math.floor(rem / 3600000);
+        const m = Math.floor((rem % 3600000) / 60000);
+        const s = Math.floor((rem % 60000) / 1000);
+        const timerStr = `${h > 0 ? h + ':' : ''}${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 
-      // Live Tag Background
-      ctx.fillStyle = liveBgColor; 
-      ctx.fillRect(W - pad.r + 2, py - 14, pad.r - 4, 28);
-      
-      // Live Price Label
-      ctx.fillStyle = liveTextColor; 
-      ctx.font = 'bold 11px "JetBrains Mono"'; 
-      ctx.textAlign = 'left';
-      ctx.fillText(p.toFixed(activePair?.includes("BTC") ? 1 : 4), W - pad.r + 8, py - 1);
-      
-      // Countdown Timer Label
-      ctx.font = '10px "JetBrains Mono"';
-      ctx.fillText(timerStr, W - pad.r + 8, py + 10);
+        ctx.fillStyle = liveBgColor; 
+        ctx.fillRect(W - pad.r + 2, py - 14, pad.r - 4, 28);
+        
+        ctx.fillStyle = liveTextColor; 
+        ctx.font = 'bold 11px "JetBrains Mono"'; 
+        ctx.textAlign = 'left';
+        ctx.fillText(p.toFixed(activePair?.includes("BTC") ? 1 : 4), W - pad.r + 8, py - 1);
+        
+        ctx.font = '10px "JetBrains Mono"';
+        ctx.fillText(timerStr, W - pad.r + 8, py + 10);
+      }
     }
   }, [candles, activePair, timeframe, isFullscreen, currentSignal]);
 
@@ -288,7 +290,9 @@ export default function ChartPanel() {
 
       if (isDragging.current) {
         const dx = e.clientX - lastMouse.current.x;
+        const dy = e.clientY - lastMouse.current.y;
         scrollXRef.current += dx; 
+        scrollYRef.current += dy; // Track vertical adjustments during mouse movement
       }
       
       lastMouse.current = { x: e.clientX, y: e.clientY };
@@ -304,11 +308,20 @@ export default function ChartPanel() {
       requestAnimationFrame(draw);
     };
 
+    // Resets chart alignment layout back to initial view coordinates on double click
+    const onDoubleClick = () => {
+      scrollXRef.current = 0;
+      scrollYRef.current = 0;
+      zoomRef.current = 1;
+      requestAnimationFrame(draw);
+    };
+
     canvas.addEventListener("wheel", onWheel, { passive: false });
     canvas.addEventListener("mousedown", onMouseDown);
-    window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mouseup", onMouseUp);
+    canvas.addEventListener("mousemove", onMouseMove);
+    canvas.addEventListener("mouseup", onMouseUp);
     canvas.addEventListener("mouseleave", onMouseLeave);
+    canvas.addEventListener("dblclick", onDoubleClick);
 
     return () => {
       canvas.removeEventListener("wheel", onWheel);
@@ -316,6 +329,7 @@ export default function ChartPanel() {
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
       canvas.removeEventListener("mouseleave", onMouseLeave);
+      canvas.removeEventListener("dblclick", onDoubleClick);
     };
   }, [draw]);
 
@@ -338,6 +352,7 @@ export default function ChartPanel() {
             onClick={() => {
               setIsFullscreen(!isFullscreen);
               scrollXRef.current = 0;
+              scrollYRef.current = 0;
               zoomRef.current = 1;
               setTimeout(() => requestAnimationFrame(draw), 50);
             }}
