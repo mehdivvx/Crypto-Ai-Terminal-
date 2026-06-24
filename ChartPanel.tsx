@@ -18,9 +18,9 @@ export default function ChartPanel() {
 
   const currentSignal = signals.find(s => s.symbol === activePair && s.status === 'ACTIVE');
 
-  // --- TRADINGVIEW ENGINE (High Performance Refs) ---
+  // --- TRADINGVIEW ENGINE ---
   const scrollXRef = useRef(0);
-  const scrollYRef = useRef(0); // Tracks vertical panning offset
+  const scrollYRef = useRef(0);
   const zoomRef = useRef(1);
   const isDragging = useRef(false);
   const lastMouse = useRef({ x: 0, y: 0 });
@@ -38,7 +38,7 @@ export default function ChartPanel() {
   useEffect(() => {
     if (initializedPair.current !== activePair) {
       scrollXRef.current = 0;
-      scrollYRef.current = 0; // Reset vertical pan on pair change
+      scrollYRef.current = 0;
       zoomRef.current = 1;
       initializedPair.current = activePair;
     }
@@ -48,6 +48,13 @@ export default function ChartPanel() {
     const canvas = canvasRef.current;
     const container = containerRef.current;
     if (!canvas || !container || candles.length === 0) return;
+
+    // Detect Theme dynamically for Canvas API
+    const isLightMode = document.documentElement.getAttribute('data-theme') === 'light';
+    const textColor = isLightMode ? '#0F172A' : '#ffffff';
+    const gridColor = isLightMode ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.05)';
+    const tooltipBg = isLightMode ? '#ffffff' : '#0a0c10';
+    const tooltipBorder = isLightMode ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.1)';
 
     const dpr = window.devicePixelRatio || 1;
     const W = container.clientWidth;
@@ -92,17 +99,18 @@ export default function ChartPanel() {
     const paddedMxH = mxH + rng * 0.1;
     const paddedRng = paddedMxH - paddedMnL;
 
-    // Injected scrollYRef dynamic shifts to handle the vertical transformations smoothly
     const sy = (v: number) => pad.t + (1 - (v - paddedMnL) / paddedRng) * chartH + scrollYRef.current;
     const getPriceAtY = (y: number) => paddedMnL + paddedRng * (1 - (y - pad.t - scrollYRef.current) / chartH);
 
-    ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+    ctx.strokeStyle = gridColor;
     ctx.lineWidth = 1;
     for (let i = 0; i <= 5; i++) {
       const y = pad.t + chartH * i / 5;
       ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(W - pad.r, y); ctx.stroke();
       const pv = getPriceAtY(y);
-      ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.font = '10px "JetBrains Mono"'; ctx.textAlign = 'left';
+      ctx.fillStyle = isLightMode ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.4)'; 
+      ctx.font = '10px "JetBrains Mono"'; 
+      ctx.textAlign = 'left';
       ctx.fillText(pv.toFixed(activePair?.includes("BTC") ? 1 : 4), W - pad.r + 8, y + 4);
     }
 
@@ -115,18 +123,20 @@ export default function ChartPanel() {
       if (x < pad.l - cW || x > W - pad.r) continue;
 
       const vH = (c.v / mxV) * maxVolHeight;
-      ctx.fillStyle = c.c >= c.o ? 'rgba(0,255,157,0.35)' : 'rgba(255,42,109,0.35)';
-      // Volume bars are strictly layout-pinned and do not slide out of view vertically
+      // Use crisp colors for Light Mode volume bars
+      ctx.fillStyle = isLightMode 
+        ? (c.c >= c.o ? 'rgba(5, 150, 105, 0.4)' : 'rgba(225, 29, 72, 0.4)')
+        : (c.c >= c.o ? 'rgba(0,255,157,0.35)' : 'rgba(255,42,109,0.35)');
       ctx.fillRect(x - cW * 0.4, H - pad.b - vH, cW * 0.8, vH);
     }
 
     if (showSignalsRef.current && currentSignal) {
       const targetLevels = [
-        { label: 'ENTRY', price: currentSignal.entryPrice, color: 'rgba(0, 212, 255, 0.65)' },
-        { label: 'STOP', price: currentSignal.sl, color: 'rgba(255, 42, 109, 0.65)' },
-        { label: 'TP 1', price: currentSignal.tp1, color: 'rgba(0, 255, 157, 0.65)' },
-        { label: 'TP 2', price: currentSignal.tp2, color: 'rgba(0, 255, 157, 0.65)' },
-        { label: 'TP 3', price: currentSignal.tp3, color: 'rgba(0, 255, 157, 0.65)' },
+        { label: 'ENTRY', price: currentSignal.entryPrice, color: isLightMode ? '#0284c7' : 'rgba(0, 212, 255, 0.85)' },
+        { label: 'STOP', price: currentSignal.sl, color: isLightMode ? '#e11d48' : 'rgba(255, 42, 109, 0.85)' },
+        { label: 'TP 1', price: currentSignal.tp1, color: isLightMode ? '#059669' : 'rgba(0, 255, 157, 0.85)' },
+        { label: 'TP 2', price: currentSignal.tp2, color: isLightMode ? '#059669' : 'rgba(0, 255, 157, 0.85)' },
+        { label: 'TP 3', price: currentSignal.tp3, color: isLightMode ? '#059669' : 'rgba(0, 255, 157, 0.85)' },
       ];
 
       targetLevels.forEach(lvl => {
@@ -140,7 +150,7 @@ export default function ChartPanel() {
           ctx.beginPath(); ctx.moveTo(pad.l, zy); ctx.lineTo(W - pad.r, zy); ctx.stroke();
           ctx.setLineDash([]);
           
-          ctx.fillStyle = 'rgba(0,0,0,0.85)';
+          ctx.fillStyle = tooltipBg;
           ctx.fillRect(pad.l, zy - 10, 42, 20);
 
           ctx.fillStyle = lvl.color; 
@@ -157,15 +167,26 @@ export default function ChartPanel() {
       if (x < pad.l - cW || x > W - pad.r) continue;
 
       const bull = c.c >= c.o;
-      const col = bull ? '#00ff9d' : '#ff2a6d';
+      
+      // FIX: Solid crisp tailwind colors for Light Mode instead of neon blurs
+      let col = bull ? '#00ff9d' : '#ff2a6d';
+      let fillCol = bull ? 'rgba(0,255,157,0.9)' : 'rgba(255,42,109,0.9)';
+      
+      if (isLightMode) {
+        col = bull ? '#059669' : '#e11d48';
+        fillCol = col;
+      }
+
       const oY = sy(c.o), clY = sy(c.c), hiY = sy(c.h), loY = sy(c.l);
       const top = Math.min(oY, clY), bh = Math.max(1.5, Math.abs(clY - oY));
 
       ctx.strokeStyle = col; ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.moveTo(x, hiY); ctx.lineTo(x, loY); ctx.stroke();
       
-      ctx.shadowBlur = 6; ctx.shadowColor = col;
-      ctx.fillStyle = bull ? 'rgba(0,255,157,0.9)' : 'rgba(255,42,109,0.9)';
+      // FIX: Strip shadowBlur entirely in Light Mode to remove fuzziness
+      ctx.shadowBlur = isLightMode ? 0 : 6; 
+      ctx.shadowColor = col;
+      ctx.fillStyle = fillCol;
       ctx.fillRect(x - cW * 0.4, top, cW * 0.8, bh);
       ctx.shadowBlur = 0;
     }
@@ -174,7 +195,7 @@ export default function ChartPanel() {
       const { x, y } = hoverPos.current;
       
       if (x >= pad.l && x <= W - pad.r && y >= pad.t && y <= H - pad.b) {
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)'; 
+        ctx.strokeStyle = isLightMode ? 'rgba(0,0,0,0.2)' : 'rgba(255, 255, 255, 0.15)'; 
         ctx.lineWidth = 1;
         ctx.setLineDash([3, 5]); 
 
@@ -191,39 +212,38 @@ export default function ChartPanel() {
         ctx.setLineDash([]); 
 
         const crossPrice = getPriceAtY(y);
-        ctx.fillStyle = '#0a0c10'; 
+        ctx.fillStyle = tooltipBg; 
         ctx.fillRect(W - pad.r, y - 10, pad.r, 20);
-        ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+        ctx.strokeStyle = tooltipBorder;
         ctx.strokeRect(W - pad.r, y - 10, pad.r, 20);
         
-        ctx.fillStyle = '#ffffff';
+        ctx.fillStyle = textColor;
         ctx.font = '10px "JetBrains Mono"';
         ctx.fillText(crossPrice.toFixed(activePair?.includes("BTC") ? 1 : 4), W - pad.r + 8, y + 4);
       }
     }
 
-    // ─── UPGRADED DYNAMIC LIVE PRICE & CANDLE COUNTDOWN ───
     const p = LIVE_PRICES[activePair || "BTC/USDT"];
     if (p) {
       const py = sy(p);
-      
-      // Changed verification check from fixed arrays to canvas bounds to prevent disappearing live tag on pan
       if (py >= pad.t && py <= H - pad.b) {
         const currentCandle = candles[candles.length - 1];
         const isLiveBullish = currentCandle ? p >= currentCandle.o : true;
         
-        const liveLineColor = isLiveBullish ? 'rgba(0, 255, 157, 0.4)' : 'rgba(255, 42, 109, 0.4)';
+        const liveLineColor = isLiveBullish ? 'rgba(0, 255, 157, 0.6)' : 'rgba(255, 42, 109, 0.6)';
         const liveBgColor = isLiveBullish ? 'rgba(0, 255, 157, 0.15)' : 'rgba(255, 42, 109, 0.15)';
-        const liveTextColor = isLiveBullish ? '#00ff9d' : '#ff2a6d';
+        const liveTextColor = isLiveBullish ? '#059669' : '#e11d48';
 
-        ctx.strokeStyle = liveLineColor; 
+        ctx.strokeStyle = isLightMode ? liveTextColor : liveLineColor; 
         ctx.lineWidth = 1; 
         ctx.setLineDash([4, 4]); 
         ctx.beginPath(); ctx.moveTo(pad.l, py); ctx.lineTo(W - pad.r, py); ctx.stroke();
         ctx.setLineDash([]);
         
+        // FIX: Added '1m' into the countdown math
         let ms = 15 * 60000;
-        if (timeframe === "5m") ms = 5 * 60000;
+        if (timeframe === "1m") ms = 60000;
+        else if (timeframe === "5m") ms = 5 * 60000;
         else if (timeframe === "30m") ms = 30 * 60000;
         else if (timeframe === "1h") ms = 60 * 60000;
         else if (timeframe === "4h") ms = 240 * 60000;
@@ -234,10 +254,10 @@ export default function ChartPanel() {
         const s = Math.floor((rem % 60000) / 1000);
         const timerStr = `${h > 0 ? h + ':' : ''}${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 
-        ctx.fillStyle = liveBgColor; 
+        ctx.fillStyle = isLightMode ? (isLiveBullish ? 'rgba(5,150,105,0.1)' : 'rgba(225,29,72,0.1)') : liveBgColor; 
         ctx.fillRect(W - pad.r + 2, py - 14, pad.r - 4, 28);
         
-        ctx.fillStyle = liveTextColor; 
+        ctx.fillStyle = isLightMode ? liveTextColor : (isLiveBullish ? '#00ff9d' : '#ff2a6d'); 
         ctx.font = 'bold 11px "JetBrains Mono"'; 
         ctx.textAlign = 'left';
         ctx.fillText(p.toFixed(activePair?.includes("BTC") ? 1 : 4), W - pad.r + 8, py - 1);
@@ -249,8 +269,10 @@ export default function ChartPanel() {
   }, [candles, activePair, timeframe, isFullscreen, currentSignal]);
 
   useEffect(() => {
+    const observer = new MutationObserver(() => requestAnimationFrame(draw));
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    
     if (containerRef.current) requestAnimationFrame(draw);
-
     const ro = new ResizeObserver(() => requestAnimationFrame(draw));
     if (containerRef.current) ro.observe(containerRef.current);
     
@@ -258,6 +280,7 @@ export default function ChartPanel() {
     return () => {
       ro.disconnect();
       clearInterval(interval);
+      observer.disconnect();
     };
   }, [draw]);
 
@@ -292,29 +315,16 @@ export default function ChartPanel() {
         const dx = e.clientX - lastMouse.current.x;
         const dy = e.clientY - lastMouse.current.y;
         scrollXRef.current += dx; 
-        scrollYRef.current += dy; // Track vertical adjustments during mouse movement
+        scrollYRef.current += dy;
       }
       
       lastMouse.current = { x: e.clientX, y: e.clientY };
       requestAnimationFrame(draw);
     };
 
-    const onMouseUp = () => {
-      isDragging.current = false;
-    };
-
-    const onMouseLeave = () => {
-      hoverPos.current = null;
-      requestAnimationFrame(draw);
-    };
-
-    // Resets chart alignment layout back to initial view coordinates on double click
-    const onDoubleClick = () => {
-      scrollXRef.current = 0;
-      scrollYRef.current = 0;
-      zoomRef.current = 1;
-      requestAnimationFrame(draw);
-    };
+    const onMouseUp = () => isDragging.current = false;
+    const onMouseLeave = () => { hoverPos.current = null; requestAnimationFrame(draw); };
+    const onDoubleClick = () => { scrollXRef.current = 0; scrollYRef.current = 0; zoomRef.current = 1; requestAnimationFrame(draw); };
 
     canvas.addEventListener("wheel", onWheel, { passive: false });
     canvas.addEventListener("mousedown", onMouseDown);
@@ -337,12 +347,12 @@ export default function ChartPanel() {
     <div className={isFullscreen ? "fixed inset-0 z-[9999] p-4 bg-black/90 backdrop-blur-md flex items-center justify-center" : "w-full h-full relative"}>
       <div 
         ref={containerRef} 
-        className="w-full h-full relative rounded-[16px] bg-[#040608] border border-white/5 shadow-[inset_0_0_20px_rgba(0,0,0,1)] overflow-hidden"
+        className="w-full h-full relative rounded-[16px] bg-[var(--panel)] border border-[var(--border)] shadow-md overflow-hidden transition-colors duration-300"
       >
         <div className="absolute top-4 right-[90px] z-50 flex items-center gap-2">
           <button 
             onClick={toggleSignals}
-            className={`flex items-center gap-2 px-3 py-1.5 backdrop-blur-md border rounded-[6px] font-mono text-[10px] font-bold tracking-[1px] transition-all shadow-md ${showSignalLevels ? 'bg-[#00d4ff]/10 border-[#00d4ff]/40 text-[#00d4ff] shadow-[0_0_10px_rgba(0,212,255,0.2)]' : 'bg-[#0a0c10]/80 border-white/10 text-[#8b99ae] hover:text-white'}`}
+            className={`flex items-center gap-2 px-3 py-1.5 backdrop-blur-md border rounded-[6px] font-mono text-[10px] font-bold tracking-[1px] transition-all shadow-md ${showSignalLevels ? 'bg-[var(--neon-cyan)]/10 border-[var(--neon-cyan)]/40 text-[var(--neon-cyan)] shadow-[0_0_10px_rgba(0,212,255,0.2)]' : 'bg-[var(--surface)] border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
           >
             {showSignalLevels ? <Eye size={12} /> : <EyeOff size={12} />}
             {showSignalLevels ? "SIGNAL TARGETS" : "TARGETS HIDDEN"}
@@ -356,13 +366,13 @@ export default function ChartPanel() {
               zoomRef.current = 1;
               setTimeout(() => requestAnimationFrame(draw), 50);
             }}
-            className="p-1.5 bg-[#0a0c10]/80 backdrop-blur-md border border-white/10 hover:border-[#00d4ff]/50 rounded-[6px] text-[#8b99ae] hover:text-[#00d4ff] transition-all shadow-md"
+            className="p-1.5 bg-[var(--surface)] backdrop-blur-md border border-[var(--border)] hover:border-[var(--neon-cyan)]/50 rounded-[6px] text-[var(--text-secondary)] hover:text-[var(--neon-cyan)] transition-all shadow-md"
           >
             {isFullscreen ? <Minimize size={16} /> : <Maximize size={16} />}
           </button>
         </div>
 
-        <div className="absolute inset-0 pointer-events-none opacity-[0.03] mix-blend-screen" style={{ backgroundImage: 'radial-gradient(white 1px, transparent 1px)', backgroundSize: '8px 8px' }} />
+        <div className="absolute inset-0 pointer-events-none opacity-[0.03] mix-blend-screen" style={{ backgroundImage: 'radial-gradient(var(--text-primary) 1px, transparent 1px)', backgroundSize: '8px 8px' }} />
         
         <canvas ref={canvasRef} className="w-full h-full absolute inset-0 z-10 cursor-crosshair active:cursor-grabbing" />
       </div>

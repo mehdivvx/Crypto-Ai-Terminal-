@@ -2,9 +2,9 @@
 
 import { useState, useEffect } from "react";
 import { useTradingStore, LIVE_PRICES } from "./useTradingState";
+import { formatPrice } from "./utils";
 import { Activity, ShieldCheck, AlertTriangle, Newspaper, ExternalLink, Clock } from "lucide-react";
 
-// --- HELPERS ---
 function formatNumber(num: number) {
   if (isNaN(num)) return "--";
   if (Math.abs(num) >= 1e9) return (num / 1e9).toFixed(2) + "B";
@@ -13,7 +13,6 @@ function formatNumber(num: number) {
   return num.toFixed(2);
 }
 
-// Basic algorithmic sentiment analyzer for news headlines
 function analyzeSentiment(title: string) {
   const text = title.toLowerCase();
   const bullWords = ['surge', 'jump', 'bull', 'adopt', 'approve', 'launch', 'partner', 'growth', 'buy', 'up', 'soar', 'record', 'etf', 'upgrade', 'breakout'];
@@ -23,12 +22,11 @@ function analyzeSentiment(title: string) {
   bullWords.forEach(w => { if(text.includes(w)) score++; });
   bearWords.forEach(w => { if(text.includes(w)) score--; });
   
-  if (score > 0) return { label: 'BULLISH', color: '#00ff9d' };
-  if (score < 0) return { label: 'BEARISH', color: '#ff2a6d' };
-  return { label: 'NEUTRAL', color: '#ffb800' };
+  if (score > 0) return { label: 'BULLISH', color: 'var(--neon-green)' };
+  if (score < 0) return { label: 'BEARISH', color: 'var(--neon-red)' };
+  return { label: 'NEUTRAL', color: 'var(--neon-gold)' };
 }
 
-// --- MAIN COMPONENT ---
 export default function BottomPanel() {
   const [activeTab, setActiveTab] = useState<"OVERVIEW" | "NEWS">("OVERVIEW");
 
@@ -45,7 +43,6 @@ export default function BottomPanel() {
   
   const currentPrice = LIVE_PRICES[activePair] || 0;
 
-  // --- VOLUME FETCH ---
   const [vol24h, setVol24h] = useState<number | null>(null);
   useEffect(() => {
     if (!activePair) return;
@@ -61,7 +58,6 @@ export default function BottomPanel() {
     return () => clearInterval(int);
   }, [activePair]);
 
-  // --- AUTHENTIC LIVE NEWS FETCH (AdBlocker Safe) ---
   const [news, setNews] = useState<any[]>([]);
   const [loadingNews, setLoadingNews] = useState(true);
 
@@ -70,11 +66,10 @@ export default function BottomPanel() {
     const fetchNews = async () => {
       try {
         setLoadingNews(true);
-        // Using RSS2JSON to pull Cointelegraph - bypasses privacy blockers that kill cryptocompare
         const res = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=https://cointelegraph.com/rss`);
         const data = await res.json();
         if (data && data.items) {
-          setNews(data.items.slice(0, 10)); // Top 10 most recent articles
+          setNews(data.items.slice(0, 10)); 
         }
       } catch (e) {
         console.error("News fetch error", e);
@@ -85,9 +80,8 @@ export default function BottomPanel() {
     fetchNews();
   }, [activeTab]);
 
-  // --- LOGIC CALCULATIONS ---
   let sentimentText = "AWAITING DATA";
-  let sentimentColor = "#4f5b70";
+  let sentimentColor = "var(--text-muted)";
 
   if (candles.length > 15) {
     const recent = candles.slice(-15);
@@ -97,15 +91,15 @@ export default function BottomPanel() {
     const buyPressure = totalVol > 0 ? (greenVol / totalVol) * 100 : 50;
     const priceDelta = ((recent[recent.length - 1].c - recent[0].o) / recent[0].o) * 100;
 
-    if (buyPressure > 65 && priceDelta > 0.5) { sentimentText = "BUYERS ARE DOMINATING"; sentimentColor = "#00ff9d"; } 
-    else if (buyPressure > 55) { sentimentText = "BUYERS ARE STEPPING IN"; sentimentColor = "#00ff9d"; } 
-    else if (buyPressure < 35 && priceDelta < -0.5) { sentimentText = "SELLERS ARE DOMINATING"; sentimentColor = "#ff2a6d"; } 
-    else if (buyPressure < 45) { sentimentText = "SELLERS ARE STEPPING IN"; sentimentColor = "#ff2a6d"; } 
-    else { sentimentText = "MARKET IS STABLE"; sentimentColor = "#00d4ff"; }
+    if (buyPressure > 65 && priceDelta > 0.5) { sentimentText = "BUYERS ARE DOMINATING"; sentimentColor = "var(--neon-green)"; } 
+    else if (buyPressure > 55) { sentimentText = "BUYERS ARE STEPPING IN"; sentimentColor = "var(--neon-green)"; } 
+    else if (buyPressure < 35 && priceDelta < -0.5) { sentimentText = "SELLERS ARE DOMINATING"; sentimentColor = "var(--neon-red)"; } 
+    else if (buyPressure < 45) { sentimentText = "SELLERS ARE STEPPING IN"; sentimentColor = "var(--neon-red)"; } 
+    else { sentimentText = "MARKET IS STABLE"; sentimentColor = "var(--neon-cyan)"; }
   }
 
   let whaleText = "SAFE FROM MANIPULATION";
-  let whaleColor = "#00ff9d";
+  let whaleColor = "var(--neon-green)";
   let WhaleIcon = ShieldCheck;
   let whaleTimeInfo = "NO RECENT ANOMALIES";
 
@@ -123,7 +117,7 @@ export default function BottomPanel() {
       
       let timeString = hoursAgo > 0 ? `${hoursAgo} HOUR${hoursAgo > 1 ? 'S' : ''} AGO` : `${minsAgo} MINS AGO`;
       whaleText = isPump ? "YES, WHALE IS PUMPING" : "YES, WHALE IS DUMPING";
-      whaleColor = isPump ? "#00ff9d" : "#ff2a6d";
+      whaleColor = isPump ? "var(--neon-green)" : "var(--neon-red)";
       whaleTimeInfo = `LAST ANOMALY: ${timeString}`;
       WhaleIcon = AlertTriangle;
     }
@@ -134,13 +128,13 @@ export default function BottomPanel() {
   const vwapDev = (vwap > 0 && currentPrice > 0) ? ((currentPrice - vwap) / vwap) * 100 : 0;
   
   let momentumText = "NEUT";
-  let momentumColor = "#ffb800";
+  let momentumColor = "var(--neon-gold)";
   if (candles.length >= 5) {
     const recent = candles.slice(-5);
     const bullC = recent.filter(c => c.c > c.o).length;
     const momScore = Math.round(((bullC / 5) - 0.5) * 200 + (rsi - 50));
-    if (momScore > 30) { momentumText = "BULL"; momentumColor = "#00ff9d"; }
-    else if (momScore < -30) { momentumText = "BEAR"; momentumColor = "#ff2a6d"; }
+    if (momScore > 30) { momentumText = "BULL"; momentumColor = "var(--neon-green)"; }
+    else if (momScore < -30) { momentumText = "BEAR"; momentumColor = "var(--neon-red)"; }
   }
 
   let revScore = 0;
@@ -154,107 +148,103 @@ export default function BottomPanel() {
   if (imb > 40) revScore += 20; else if (imb > 25) revScore += 10;
   
   const revProb = Math.min(95, Math.round(revScore));
-  const revColor = revProb > 70 ? "#ff2a6d" : revProb > 45 ? "#ffb800" : "#00ff9d";
-  const cvdColor = cvd > 0 ? "#00ff9d" : cvd < 0 ? "#ff2a6d" : "#ffffff";
+  const revColor = revProb > 70 ? "var(--neon-red)" : revProb > 45 ? "var(--neon-gold)" : "var(--neon-green)";
+  const cvdColor = cvd > 0 ? "var(--neon-green)" : cvd < 0 ? "var(--neon-red)" : "var(--text-primary)";
 
   return (
-    <div className="w-full h-full min-h-[190px] rounded-[18px] flex flex-col overflow-hidden bg-[#040608] border border-white/5 shadow-[inset_0_0_20px_rgba(0,0,0,1)] relative">
+    <div className="w-full h-full min-h-[190px] rounded-[18px] flex flex-col overflow-hidden bg-[var(--panel)] border border-[var(--border)] shadow-md relative transition-colors duration-300">
       
-      {/* Background Grid */}
       <div 
-        className="absolute inset-0 pointer-events-none opacity-[0.03] mix-blend-screen"
-        style={{ backgroundImage: 'radial-gradient(white 1px, transparent 1px)', backgroundSize: '8px 8px' }}
+        className="absolute inset-0 pointer-events-none opacity-[0.03]"
+        style={{ backgroundImage: 'radial-gradient(var(--text-primary) 1px, transparent 1px)', backgroundSize: '8px 8px' }}
       />
 
-      {/* ── HEADER / TAB SWITCHER ── */}
-      <div className="flex items-center justify-center px-4 py-2 border-b border-white/[0.05] bg-white/[0.02] relative z-10 shrink-0">
+      <div className="flex items-center justify-center px-4 py-2 border-b border-[var(--border)] bg-[var(--surface)] relative z-10 shrink-0">
         <div className="flex items-center gap-2">
           <button 
             onClick={() => setActiveTab("OVERVIEW")}
-            className={`font-mono text-[10px] font-bold tracking-[2px] px-3 py-1.5 rounded-[6px] transition-all duration-300 ${activeTab === "OVERVIEW" ? "bg-[#00d4ff]/10 text-[#00d4ff] shadow-[inset_0_0_10px_rgba(0,212,255,0.2)] border border-[#00d4ff]/20" : "text-[#4f5b70] hover:text-white border border-transparent"}`}
+            className={`font-mono text-[10px] font-bold tracking-[2px] px-3 py-1.5 rounded-[6px] transition-all duration-300 ${activeTab === "OVERVIEW" ? "bg-[var(--neon-cyan)]/10 text-[var(--neon-cyan)] shadow-[inset_0_0_10px_rgba(0,212,255,0.2)] border border-[var(--neon-cyan)]/20" : "text-[var(--text-muted)] hover:text-[var(--text-primary)] border border-transparent"}`}
           >
             <Activity size={12} className="inline mr-1.5 mb-0.5" /> MARKET OVERVIEW
           </button>
           <button 
             onClick={() => setActiveTab("NEWS")}
-            className={`font-mono text-[10px] font-bold tracking-[2px] px-3 py-1.5 rounded-[6px] transition-all duration-300 ${activeTab === "NEWS" ? "bg-[#00d4ff]/10 text-[#00d4ff] shadow-[inset_0_0_10px_rgba(0,212,255,0.2)] border border-[#00d4ff]/20" : "text-[#4f5b70] hover:text-white border border-transparent"}`}
+            className={`font-mono text-[10px] font-bold tracking-[2px] px-3 py-1.5 rounded-[6px] transition-all duration-300 ${activeTab === "NEWS" ? "bg-[var(--neon-cyan)]/10 text-[var(--neon-cyan)] shadow-[inset_0_0_10px_rgba(0,212,255,0.2)] border border-[var(--neon-cyan)]/20" : "text-[var(--text-muted)] hover:text-[var(--text-primary)] border border-transparent"}`}
           >
             <Newspaper size={12} className="inline mr-1.5 mb-0.5" /> GLOBAL NEWS
           </button>
         </div>
       </div>
 
-      {/* ── CONTENT AREA ── */}
       <div className="flex-1 flex flex-col relative z-10 h-full overflow-hidden">
         
-        {/* VIEW 1: MARKET OVERVIEW */}
         {activeTab === "OVERVIEW" && (
           <>
-            <div className="flex flex-1 w-full items-stretch divide-x divide-white/[0.05] bg-black/40 border-b border-white/[0.05]">
-              <div className="flex-1 flex flex-col justify-center px-6 py-2 relative group hover:bg-white/[0.02] transition-colors">
-                <span className="font-mono text-[9px] font-bold text-[#4f5b70] tracking-[2px] mb-1.5">24H VOLUME</span>
-                <span className="font-num text-[22px] font-bold text-white drop-shadow-md leading-none mb-1.5">
+            <div className="flex flex-1 w-full items-stretch divide-x divide-[var(--border)] bg-[var(--surface)] border-b border-[var(--border)]">
+              <div className="flex-1 flex flex-col justify-center px-6 py-2 relative group hover:bg-[var(--panel)] transition-colors">
+                <span className="font-mono text-[9px] font-bold text-[var(--text-muted)] tracking-[2px] mb-1.5">24H VOLUME</span>
+                <span className="font-num text-[22px] font-bold text-[var(--text-primary)] drop-shadow-md leading-none mb-1.5">
                   {vol24h ? formatNumber(vol24h) : "--"}
                 </span>
-                <span className="font-mono text-[9px] text-[#8b99ae]">USDT</span>
+                <span className="font-mono text-[9px] text-[var(--text-secondary)]">USDT</span>
               </div>
-              <div className="flex-1 flex flex-col justify-center px-6 py-2 relative group hover:bg-white/[0.02] transition-colors">
-                <span className="font-mono text-[9px] font-bold text-[#4f5b70] tracking-[2px] mb-1.5">CVD</span>
-                <span className="font-num text-[22px] font-bold leading-none mb-1.5" style={{ color: cvdColor, textShadow: `0 0 15px ${cvdColor}80` }}>
+              <div className="flex-1 flex flex-col justify-center px-6 py-2 relative group hover:bg-[var(--panel)] transition-colors">
+                <span className="font-mono text-[9px] font-bold text-[var(--text-muted)] tracking-[2px] mb-1.5">CVD</span>
+                <span className="font-num text-[22px] font-bold leading-none mb-1.5" style={{ color: cvdColor }}>
                   {cvd > 0 ? '+' : ''}{formatNumber(cvd)}
                 </span>
-                <span className="font-mono text-[9px] text-[#8b99ae]">CUM DELTA</span>
+                <span className="font-mono text-[9px] text-[var(--text-secondary)]">CUM DELTA</span>
               </div>
-              <div className="flex-1 flex flex-col justify-center px-6 py-2 relative group hover:bg-white/[0.02] transition-colors">
-                <span className="font-mono text-[9px] font-bold text-[#4f5b70] tracking-[2px] mb-1.5">AGGRESSION</span>
-                <span className="font-num text-[22px] font-bold leading-none mb-1.5" style={{ color: buyRatio > 55 ? '#00ff9d' : buyRatio < 45 ? '#ff2a6d' : '#ffb800', textShadow: `0 0 15px ${buyRatio > 55 ? '#00ff9d' : buyRatio < 45 ? '#ff2a6d' : '#ffb800'}80` }}>
+              <div className="flex-1 flex flex-col justify-center px-6 py-2 relative group hover:bg-[var(--panel)] transition-colors">
+                <span className="font-mono text-[9px] font-bold text-[var(--text-muted)] tracking-[2px] mb-1.5">AGGRESSION</span>
+                <span className="font-num text-[22px] font-bold leading-none mb-1.5" style={{ color: buyRatio > 55 ? 'var(--neon-green)' : buyRatio < 45 ? 'var(--neon-red)' : 'var(--neon-gold)' }}>
                   {buyRatio}%
                 </span>
-                <span className="font-mono text-[9px] text-[#8b99ae]">BUY RATIO</span>
+                <span className="font-mono text-[9px] text-[var(--text-secondary)]">BUY RATIO</span>
               </div>
-              <div className="flex-1 flex flex-col justify-center px-6 py-2 relative group hover:bg-white/[0.02] transition-colors">
-                <span className="font-mono text-[9px] font-bold text-[#4f5b70] tracking-[2px] mb-1.5">MOMENTUM</span>
-                <span className="font-mono text-[22px] font-bold leading-none mb-1.5" style={{ color: momentumColor, textShadow: `0 0 15px ${momentumColor}80` }}>
+              <div className="flex-1 flex flex-col justify-center px-6 py-2 relative group hover:bg-[var(--panel)] transition-colors">
+                <span className="font-mono text-[9px] font-bold text-[var(--text-muted)] tracking-[2px] mb-1.5">MOMENTUM</span>
+                <span className="font-mono text-[22px] font-bold leading-none mb-1.5" style={{ color: momentumColor }}>
                   {momentumText}
                 </span>
-                <span className="font-mono text-[9px] text-[#8b99ae]">BIAS</span>
+                <span className="font-mono text-[9px] text-[var(--text-secondary)]">BIAS</span>
               </div>
-              <div className="flex-1 flex flex-col justify-center px-6 py-2 relative group hover:bg-white/[0.02] transition-colors">
-                <span className="font-mono text-[9px] font-bold text-[#4f5b70] tracking-[2px] mb-1.5">REVERSAL PROB</span>
-                <span className="font-num text-[22px] font-bold leading-none mb-1.5" style={{ color: revColor, textShadow: `0 0 15px ${revColor}80` }}>
+              <div className="flex-1 flex flex-col justify-center px-6 py-2 relative group hover:bg-[var(--panel)] transition-colors">
+                <span className="font-mono text-[9px] font-bold text-[var(--text-muted)] tracking-[2px] mb-1.5">REVERSAL PROB</span>
+                <span className="font-num text-[22px] font-bold leading-none mb-1.5" style={{ color: revColor }}>
                   {revProb}%
                 </span>
-                <span className="font-mono text-[9px] text-[#8b99ae]">SCORE</span>
+                <span className="font-mono text-[9px] text-[var(--text-secondary)]">SCORE</span>
               </div>
-              <div className="flex-1 flex flex-col justify-center px-6 py-2 relative group hover:bg-white/[0.02] transition-colors">
-                <span className="font-mono text-[9px] font-bold text-[#4f5b70] tracking-[2px] mb-1.5">VWAP DEV</span>
-                <span className="font-num text-[22px] font-bold leading-none mb-1.5" style={{ color: vwapDev > 0 ? '#00ff9d' : '#ff2a6d', textShadow: `0 0 15px ${vwapDev > 0 ? '#00ff9d' : '#ff2a6d'}80` }}>
+              <div className="flex-1 flex flex-col justify-center px-6 py-2 relative group hover:bg-[var(--panel)] transition-colors">
+                <span className="font-mono text-[9px] font-bold text-[var(--text-muted)] tracking-[2px] mb-1.5">VWAP DEV</span>
+                <span className="font-num text-[22px] font-bold leading-none mb-1.5" style={{ color: vwapDev > 0 ? 'var(--neon-green)' : 'var(--neon-red)' }}>
                   {vwapDev > 0 ? '+' : ''}{vwapDev.toFixed(2)}%
                 </span>
-                <span className="font-mono text-[9px] text-[#8b99ae]">DEVIATION %</span>
+                <span className="font-mono text-[9px] text-[var(--text-secondary)]">DEVIATION %</span>
               </div>
             </div>
 
-            <div className="flex w-full h-[87px] shrink-0 divide-x divide-white/[0.05]">
-              <div className="flex-1 flex items-center justify-between px-6 bg-gradient-to-r from-transparent to-black/20">
-                <span className="font-mono text-[10px] text-[#8b99ae] tracking-[2px] uppercase">
+            <div className="flex w-full h-[87px] shrink-0 divide-x divide-[var(--border)]">
+              <div className="flex-1 flex items-center justify-between px-6 bg-[var(--surface)]">
+                <span className="font-mono text-[10px] text-[var(--text-secondary)] tracking-[2px] uppercase">
                   {timeframe} Candle Sentiment
                 </span>
                 <div className="flex items-center gap-3">
                   <div className="h-2.5 w-2.5 rounded-full animate-pulse" style={{ background: sentimentColor, boxShadow: `0 0 10px ${sentimentColor}` }} />
-                  <span className="font-display text-[15px] font-bold tracking-widest uppercase" style={{ color: sentimentColor, textShadow: `0 0 15px ${sentimentColor}80` }}>
+                  <span className="font-display text-[15px] font-bold tracking-widest uppercase" style={{ color: sentimentColor }}>
                     {sentimentText}
                   </span>
                 </div>
               </div>
-              <div className="flex-1 flex items-center justify-between px-6 bg-gradient-to-l from-transparent to-black/20">
-                <span className="font-mono text-[10px] text-[#8b99ae] tracking-[2px] uppercase">
+              <div className="flex-1 flex items-center justify-between px-6 bg-[var(--surface)]">
+                <span className="font-mono text-[10px] text-[var(--text-secondary)] tracking-[2px] uppercase">
                   Whale & Manipulation Radar
                 </span>
                 <div className="flex flex-col items-end justify-center">
                   <div className="flex items-center gap-2">
-                    <WhaleIcon size={14} style={{ color: whaleColor, filter: `drop-shadow(0 0 5px ${whaleColor})` }} />
-                    <span className="font-display text-[15px] font-bold tracking-widest uppercase" style={{ color: whaleColor, textShadow: `0 0 15px ${whaleColor}80` }}>
+                    <WhaleIcon size={14} style={{ color: whaleColor }} />
+                    <span className="font-display text-[15px] font-bold tracking-widest uppercase" style={{ color: whaleColor }}>
                       {whaleText}
                     </span>
                   </div>
@@ -267,17 +257,16 @@ export default function BottomPanel() {
           </>
         )}
 
-        {/* VIEW 2: GLOBAL MACRO NEWS */}
         {activeTab === "NEWS" && (
-          <div className="flex-1 w-full h-full overflow-y-auto custom-scrollbar p-3 space-y-3 bg-black/40">
+          <div className="flex-1 w-full h-full overflow-y-auto custom-scrollbar p-3 space-y-3 bg-[var(--surface)]">
             {loadingNews ? (
-              <div className="w-full h-full flex items-center justify-center font-mono text-[11px] text-[#00d4ff] animate-pulse">
+              <div className="w-full h-full flex items-center justify-center font-mono text-[11px] text-[var(--neon-cyan)] animate-pulse">
                 FETCHING LATEST MARKET CATALYSTS...
               </div>
             ) : news.length === 0 ? (
-              <div className="w-full h-full flex flex-col items-center justify-center font-mono text-[#4f5b70]">
-                <AlertTriangle size={24} className="mb-2 text-[#ff2a6d]" />
-                <span className="text-[11px] font-bold tracking-[1px] text-white">CONNECTION BLOCKED</span>
+              <div className="w-full h-full flex flex-col items-center justify-center font-mono text-[var(--text-muted)]">
+                <AlertTriangle size={24} className="mb-2 text-[var(--neon-red)]" />
+                <span className="text-[11px] font-bold tracking-[1px] text-[var(--text-primary)]">CONNECTION BLOCKED</span>
                 <span className="text-[9px] mt-1">Please disable AdBlocker to view live news feeds.</span>
               </div>
             ) : (
@@ -285,7 +274,7 @@ export default function BottomPanel() {
                 const sentiment = analyzeSentiment(item.title);
                 let timeStr = "LIVE";
                 if (item.pubDate) {
-                  timeStr = item.pubDate.split(' ')[1]?.slice(0, 5) || "LIVE"; // Grabs HH:MM
+                  timeStr = item.pubDate.split(' ')[1]?.slice(0, 5) || "LIVE"; 
                 }
                 
                 return (
@@ -294,26 +283,26 @@ export default function BottomPanel() {
                     href={item.link} 
                     target="_blank" 
                     rel="noreferrer"
-                    className="block bg-[#0a0c10]/80 border border-white/5 hover:border-white/10 rounded-[8px] p-3 transition-all group"
+                    className="block bg-[var(--panel)] border border-[var(--border)] hover:border-[var(--neon-cyan)] rounded-[8px] p-3 transition-all group"
                   >
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex-1">
                         <div className="flex items-center gap-3 mb-1.5">
-                          <span className="font-mono text-[9px] font-bold text-[#8b99ae] tracking-[1px] flex items-center gap-1">
+                          <span className="font-mono text-[9px] font-bold text-[var(--text-secondary)] tracking-[1px] flex items-center gap-1">
                             <Clock size={10} /> {timeStr}
                           </span>
                           <span className="font-mono text-[9px] font-bold px-2 py-0.5 rounded-[4px]" style={{ color: sentiment.color, background: `${sentiment.color}15`, border: `1px solid ${sentiment.color}40` }}>
                             {sentiment.label}
                           </span>
-                          <span className="font-mono text-[9px] font-bold text-[#4f5b70] uppercase">
+                          <span className="font-mono text-[9px] font-bold text-[var(--text-muted)] uppercase">
                             COINTELEGRAPH
                           </span>
                         </div>
-                        <h3 className="font-display text-[13px] font-bold text-white group-hover:text-[#00d4ff] transition-colors leading-snug">
+                        <h3 className="font-display text-[13px] font-bold text-[var(--text-primary)] group-hover:text-[var(--neon-cyan)] transition-colors leading-snug">
                           {item.title}
                         </h3>
                       </div>
-                      <ExternalLink size={14} className="text-[#4f5b70] group-hover:text-[#00d4ff] shrink-0 mt-1" />
+                      <ExternalLink size={14} className="text-[var(--text-muted)] group-hover:text-[var(--neon-cyan)] shrink-0 mt-1" />
                     </div>
                   </a>
                 );

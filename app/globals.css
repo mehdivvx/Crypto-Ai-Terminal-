@@ -4,7 +4,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ─── CSS Custom Properties ──────────────────────────────────────────────── */
+/* ─── CSS Custom Properties (DARK MODE DEFAULT) ──────────────────────────────────────────────── */
 :root {
   --void:          #040608;
   --surface:       #080C10;
@@ -26,6 +26,57 @@
 
   --header-h:      72px;
   --ticker-h:      32px;
+}
+
+/* ─── LIGHT MODE ──────────────────────────────────────────────── */
+[data-theme="light"] {
+  --void:          #F8FAFC;
+  --surface:       #F1F5F9;
+  --panel:         #FFFFFF;
+  --border:        #E2E8F0;
+  --muted:         #CBD5E1;
+
+  --neon-cyan:     #0284C7;
+  --neon-green:    #16A34A;
+  --neon-red:      #E11D48;
+  
+  --text-primary:  #0F172A;
+  --text-secondary:#475569;
+  --text-muted:    #94A3B8;
+}
+
+/* ─── WINE MODE ──────────────────────────────────────────────── */
+[data-theme="wine"] {
+  --void:          #1A050B;
+  --surface:       #240710;
+  --panel:         #2D0B16;
+  --border:        #4A1224;
+  --muted:         #631830;
+
+  --neon-cyan:     #FF7597;
+  --neon-green:    #FF3366;
+  --neon-red:      #B3002D;
+  
+  --text-primary:  #FFE6EB;
+  --text-secondary:#FFB3C6;
+  --text-muted:    #CC6680;
+}
+
+/* ─── SKY MODE ──────────────────────────────────────────────── */
+[data-theme="sky"] {
+  --void:          #0B1426;
+  --surface:       #0F1C33;
+  --panel:         #112240;
+  --border:        #1E3A5F;
+  --muted:         #2A4A7A;
+
+  --neon-cyan:     #38BDF8;
+  --neon-green:    #34D399;
+  --neon-red:      #FB7185;
+  
+  --text-primary:  #E2E8F0;
+  --text-secondary:#94A3B8;
+  --text-muted:    #64748B;
 }
 
 /* ─── Reset & Base ───────────────────────────────────────────────────────── */
@@ -53,6 +104,7 @@ body {
   background-position: 0 0;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 /* ─── Scanline Overlay ───────────────────────────────────────────────────── */

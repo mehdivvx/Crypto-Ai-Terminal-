@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useTradingStore } from "@/hooks/useTradingState";
 import { SignalCard } from "./SignalCard";
 
@@ -16,6 +16,21 @@ export default function SignalEnginePanel() {
   const settings = useTradingStore(s => s.settings) || { riskMode: 'FLAT', riskValue: 10 };
   const totalBalance = useTradingStore(s => s.totalBalance) || 1000;
   
+  // ── THEME DETECTION ──
+  const [isLight, setIsLight] = useState(false);
+  const uiTheme = useTradingStore((s: any) => s.theme || s.isLightMode);
+
+  useEffect(() => {
+    const updateTheme = () => {
+      const hasLightClass = document.documentElement.classList.contains("light") || document.documentElement.getAttribute('data-theme') === 'light';
+      setIsLight(uiTheme === "light" || uiTheme === true || hasLightClass);
+    };
+    updateTheme();
+    const observer = new MutationObserver(updateTheme);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class", "data-theme"] });
+    return () => observer.disconnect();
+  }, [uiTheme]);
+
   // ── FILTERED SIGNALS ──
   const realSignals = signals.filter(s => s.status === 'PENDING');
   const currentSignals = realSignals.filter(s => s.symbol === activePair);
@@ -47,18 +62,26 @@ export default function SignalEnginePanel() {
 
   return (
     <div 
-      className="flex flex-col h-full min-h-[450px] rounded-[16px] border border-white/5 shadow-[inset_0_0_20px_rgba(0,0,0,1)]" 
-      style={{ background: "linear-gradient(180deg,#07090E 0%,#050709 100%)", overflow: "hidden" }}
+      className={`flex flex-col h-full min-h-[450px] rounded-[16px] overflow-hidden transition-colors duration-300 ${
+        isLight ? 'bg-white shadow-sm border border-slate-200' : 'border border-white/5 shadow-[inset_0_0_20px_rgba(0,0,0,1)]'
+      }`} 
+      style={{ background: isLight ? '#f8fafc' : 'linear-gradient(180deg,#07090E 0%,#050709 100%)' }}
     >
       
       {/* ── TOP-LEVEL TAB NAVIGATION ── */}
-      <div className="flex gap-2 p-3 bg-black/20 border-b border-white/5 shrink-0">
+      <div className={`flex gap-2 p-3 shrink-0 border-b transition-colors ${
+        isLight ? 'bg-slate-100/50 border-slate-200' : 'bg-black/20 border-white/5'
+      }`}>
         <button
           onClick={() => setTopTab('SIGNAL')}
           className={`flex-1 flex items-center justify-center py-2.5 rounded-[8px] transition-all duration-300 ${
             topTab === 'SIGNAL'
-              ? "bg-[#063b45] border border-[#00d4ff]/30 text-[#00d4ff] shadow-[0_4px_12px_rgba(0,212,255,0.1)]"
-              : "border border-transparent text-[#4f5b70] hover:bg-white/5 hover:text-[#8b99ae]"
+              ? (isLight 
+                  ? "bg-cyan-50 border border-cyan-200 text-cyan-600 shadow-sm" 
+                  : "bg-[#063b45] border border-[#00d4ff]/30 text-[#00d4ff] shadow-[0_4px_12px_rgba(0,212,255,0.1)]")
+              : (isLight 
+                  ? "border border-transparent text-slate-500 hover:bg-slate-200/50 hover:text-slate-700" 
+                  : "border border-transparent text-[#4f5b70] hover:bg-white/5 hover:text-[#8b99ae]")
           }`}
         >
           <span className="font-mono text-[11px] font-bold tracking-[2.5px]">SIGNAL</span>
@@ -68,8 +91,12 @@ export default function SignalEnginePanel() {
           onClick={() => setTopTab('HISTORY')}
           className={`flex-1 flex items-center justify-center py-2.5 rounded-[8px] transition-all duration-300 ${
             topTab === 'HISTORY'
-              ? "bg-[#063b45] border border-[#00d4ff]/30 text-[#00d4ff] shadow-[0_4px_12px_rgba(0,212,255,0.1)]"
-              : "border border-transparent text-[#4f5b70] hover:bg-white/5 hover:text-[#8b99ae]"
+              ? (isLight 
+                  ? "bg-cyan-50 border border-cyan-200 text-cyan-600 shadow-sm" 
+                  : "bg-[#063b45] border border-[#00d4ff]/30 text-[#00d4ff] shadow-[0_4px_12px_rgba(0,212,255,0.1)]")
+              : (isLight 
+                  ? "border border-transparent text-slate-500 hover:bg-slate-200/50 hover:text-slate-700" 
+                  : "border border-transparent text-[#4f5b70] hover:bg-white/5 hover:text-[#8b99ae]")
           }`}
         >
           <span className="font-mono text-[11px] font-bold tracking-[2.5px]">HISTORY</span>
@@ -80,15 +107,21 @@ export default function SignalEnginePanel() {
       {topTab === 'SIGNAL' && (
         <div className="flex-1 overflow-hidden flex flex-col pt-3">
           {/* Inner Tab Navigation */}
-          <div className="flex items-center p-1.5 mx-3 mb-3 bg-black/40 rounded-[8px] border border-white/5 shrink-0">
+          <div className={`flex items-center p-1.5 mx-3 mb-3 rounded-[8px] border shrink-0 transition-colors ${
+            isLight ? 'bg-slate-100 border-slate-200' : 'bg-black/40 border-white/5'
+          }`}>
             {['CURRENT', 'ALL', 'ACTIVE'].map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab as any)}
                 className={`flex-1 text-center font-mono text-[10px] font-bold tracking-[2px] py-2 rounded-[6px] transition-all duration-300 ${
                   activeTab === tab
-                    ? "bg-[#00d4ff]/10 text-[#00d4ff] shadow-[inset_0_0_10px_rgba(0,212,255,0.2)]"
-                    : "text-[#4f5b70] hover:text-white hover:bg-white/5"
+                    ? (isLight 
+                        ? "bg-white text-cyan-600 shadow-sm" 
+                        : "bg-[#00d4ff]/10 text-[#00d4ff] shadow-[inset_0_0_10px_rgba(0,212,255,0.2)]")
+                    : (isLight 
+                        ? "text-slate-500 hover:text-slate-800" 
+                        : "text-[#4f5b70] hover:text-white hover:bg-white/5")
                 }`}
               >
                 {tab}
@@ -125,7 +158,9 @@ export default function SignalEnginePanel() {
                 {activeTrades.length > 0 ? (
                   activeTrades.map(sig => <SignalCard key={sig.id} signal={sig} />)
                 ) : (
-                  <div className="text-[#8b99ae] text-[11px] text-center mt-6 p-4 border border-white/5 rounded-[8px] bg-black/30">
+                  <div className={`text-[11px] text-center mt-6 p-4 border rounded-[8px] transition-colors ${
+                    isLight ? 'text-slate-500 border-slate-200 bg-slate-50' : 'text-[#8b99ae] border-white/5 bg-black/30'
+                  }`}>
                     No active trades running.
                   </div>
                 )}
@@ -140,22 +175,22 @@ export default function SignalEnginePanel() {
         <div className="flex flex-col h-full p-3 pt-4">
           {/* History Stats Row */}
           <div className="grid grid-cols-3 gap-2 mb-4 shrink-0">
-            <div className="bg-black/30 border border-white/5 rounded-[6px] py-2.5 px-1.5 text-center">
-              <div className="font-num text-[18px] font-bold leading-none text-[#00d4ff]" style={{ textShadow: "0 0 15px rgba(0,212,255,0.4)" }}>{total}</div>
-              <div className="font-mono text-[9px] font-bold text-[#4f5b70] tracking-[2px] mt-1">TOTAL</div>
+            <div className={`border rounded-[6px] py-2.5 px-1.5 text-center transition-colors ${isLight ? 'bg-slate-50 border-slate-200' : 'bg-black/30 border-white/5'}`}>
+              <div className={`font-num text-[18px] font-bold leading-none ${isLight ? 'text-cyan-600' : 'text-[#00d4ff]'}`} style={{ textShadow: isLight ? 'none' : "0 0 15px rgba(0,212,255,0.4)" }}>{total}</div>
+              <div className={`font-mono text-[9px] font-bold tracking-[2px] mt-1 ${isLight ? 'text-slate-400' : 'text-[#4f5b70]'}`}>TOTAL</div>
             </div>
-            <div className="bg-black/30 border border-white/5 rounded-[6px] py-2.5 px-1.5 text-center">
-              <div className="font-num text-[18px] font-bold leading-none text-[#00ff9d]" style={{ textShadow: "0 0 15px rgba(0,255,157,0.4)" }}>{wins}</div>
-              <div className="font-mono text-[9px] font-bold text-[#4f5b70] tracking-[2px] mt-1">WINS</div>
+            <div className={`border rounded-[6px] py-2.5 px-1.5 text-center transition-colors ${isLight ? 'bg-slate-50 border-slate-200' : 'bg-black/30 border-white/5'}`}>
+              <div className={`font-num text-[18px] font-bold leading-none ${isLight ? 'text-emerald-500' : 'text-[#00ff9d]'}`} style={{ textShadow: isLight ? 'none' : "0 0 15px rgba(0,255,157,0.4)" }}>{wins}</div>
+              <div className={`font-mono text-[9px] font-bold tracking-[2px] mt-1 ${isLight ? 'text-slate-400' : 'text-[#4f5b70]'}`}>WINS</div>
             </div>
-            <div className="bg-black/30 border border-white/5 rounded-[6px] py-2.5 px-1.5 text-center">
-              <div className="font-num text-[18px] font-bold leading-none text-[#ff2a6d]" style={{ textShadow: "0 0 15px rgba(255,42,109,0.4)" }}>{losses}</div>
-              <div className="font-mono text-[9px] font-bold text-[#4f5b70] tracking-[2px] mt-1">LOSS</div>
+            <div className={`border rounded-[6px] py-2.5 px-1.5 text-center transition-colors ${isLight ? 'bg-slate-50 border-slate-200' : 'bg-black/30 border-white/5'}`}>
+              <div className={`font-num text-[18px] font-bold leading-none ${isLight ? 'text-rose-500' : 'text-[#ff2a6d]'}`} style={{ textShadow: isLight ? 'none' : "0 0 15px rgba(255,42,109,0.4)" }}>{losses}</div>
+              <div className={`font-mono text-[9px] font-bold tracking-[2px] mt-1 ${isLight ? 'text-slate-400' : 'text-[#4f5b70]'}`}>LOSS</div>
             </div>
           </div>
 
-          {/* History List Header (Expanded for USDT) */}
-          <div className="grid grid-cols-[35px_30px_1fr_60px_50px] gap-1.5 px-2 mb-2 font-mono text-[9px] font-bold text-[#4f5b70] tracking-[1px] uppercase">
+          {/* History List Header */}
+          <div className={`grid grid-cols-[35px_30px_1fr_60px_50px] gap-1.5 px-2 mb-2 font-mono text-[9px] font-bold tracking-[1px] uppercase transition-colors ${isLight ? 'text-slate-400' : 'text-[#4f5b70]'}`}>
             <span>DIR</span>
             <span>CNF</span>
             <span>ASSET</span>
@@ -166,7 +201,7 @@ export default function SignalEnginePanel() {
           {/* History List */}
           <div className="flex-1 overflow-y-auto custom-scrollbar pr-1 pb-3">
             {historySignals.length === 0 ? (
-              <div className="text-[#8b99ae] text-[11px] text-center mt-4 p-4 border border-white/5 rounded-[8px] bg-black/30">
+              <div className={`text-[11px] text-center mt-4 p-4 border rounded-[8px] transition-colors ${isLight ? 'text-slate-500 border-slate-200 bg-slate-50' : 'text-[#8b99ae] border-white/5 bg-black/30'}`}>
                 No closed trades tracked yet.
               </div>
             ) : (
@@ -176,20 +211,24 @@ export default function SignalEnginePanel() {
                   const timeDisplay = s.time || "Just Now";
                   const statusStr = s.status || "";
                   
-                  let resCls = 'rgba(255,255,255,0.05)';
+                  let resCls = isLight ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.05)';
                   let resTxt = 'ACTIVE';
-                  let resCol = '#00d4ff';
+                  let resCol = isLight ? '#0284c7' : '#00d4ff';
                   let pnlStr = '--';
-                  let pnlCol = '#8b99ae';
+                  let pnlCol = isLight ? '#64748b' : '#8b99ae';
                   
                   if(statusStr.includes('TP')) { 
-                    resCls = 'rgba(0,255,157,0.15)'; resTxt = statusStr.replace(' HIT',''); resCol = '#00ff9d';
-                    pnlCol = '#00ff9d';
+                    resCls = isLight ? 'rgba(16, 185, 129, 0.1)' : 'rgba(0,255,157,0.15)'; 
+                    resTxt = statusStr.replace(' HIT',''); 
+                    resCol = isLight ? '#059669' : '#00ff9d';
+                    pnlCol = isLight ? '#059669' : '#00ff9d';
                     pnlStr = s.pnl ? `+${s.pnl}%` : 'WIN';
                   }
                   else if(statusStr.includes('STOP')) { 
-                    resCls = 'rgba(255,42,109,0.15)'; resTxt = 'SL'; resCol = '#ff2a6d';
-                    pnlCol = '#ff2a6d';
+                    resCls = isLight ? 'rgba(225, 29, 72, 0.1)' : 'rgba(255,42,109,0.15)'; 
+                    resTxt = 'SL'; 
+                    resCol = isLight ? '#e11d48' : '#ff2a6d';
+                    pnlCol = isLight ? '#e11d48' : '#ff2a6d';
                     pnlStr = s.pnl ? `${s.pnl}%` : 'LOSS';
                   }
 
@@ -199,20 +238,22 @@ export default function SignalEnginePanel() {
                   const usdtPrefix = pnlUsdtAmount > 0 ? '+' : '';
 
                   return (
-                    <div key={i} className="grid grid-cols-[35px_30px_1fr_60px_50px] gap-1.5 items-center p-2 bg-black/20 border border-white/5 text-[11px] rounded-[6px] hover:bg-white/5 transition-colors">
-                      <span className="font-mono font-bold tracking-[1px]" style={{ color: isBuy ? '#00ff9d' : '#ff2a6d' }}>
+                    <div key={i} className={`grid grid-cols-[35px_30px_1fr_60px_50px] gap-1.5 items-center p-2 border text-[11px] rounded-[6px] transition-colors ${
+                      isLight ? 'bg-white border-slate-200 hover:bg-slate-50' : 'bg-black/20 border-white/5 hover:bg-white/5'
+                    }`}>
+                      <span className="font-mono font-bold tracking-[1px]" style={{ color: isBuy ? (isLight ? '#059669' : '#00ff9d') : (isLight ? '#e11d48' : '#ff2a6d') }}>
                         {isBuy ? "BUY" : "SELL"}
                       </span>
-                      <span className="font-num font-semibold text-[#8b99ae]">
+                      <span className={`font-num font-semibold ${isLight ? 'text-slate-500' : 'text-[#8b99ae]'}`}>
                         {s.confidence || 0}%
                       </span>
-                      <span className="font-num text-[#d1d4dc] truncate">
-                        {s.symbol.replace('/USDT', '')} <span className="text-[#4f5b70] text-[9px]">{timeDisplay.split(' ')[0]}</span>
+                      <span className={`font-num truncate ${isLight ? 'text-slate-700' : 'text-[#d1d4dc]'}`}>
+                        {s.symbol.replace('/USDT', '')} <span className={`text-[9px] ${isLight ? 'text-slate-400' : 'text-[#4f5b70]'}`}>{timeDisplay.split(' ')[0]}</span>
                       </span>
                       
                       {/* ── Displaying both USDT and % ── */}
                       <div className="flex flex-col items-end justify-center leading-tight">
-                        <span className="font-num text-[10px] font-bold" style={{ color: pnlCol, textShadow: `0 0 10px ${pnlCol}40` }}>
+                        <span className="font-num text-[10px] font-bold" style={{ color: pnlCol, textShadow: isLight ? 'none' : `0 0 10px ${pnlCol}40` }}>
                            {usdtPrefix}{pnlUsdtAmount.toFixed(2)}$
                         </span>
                         <span className="font-num text-[8px] font-bold opacity-70" style={{ color: pnlCol }}>
